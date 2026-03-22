@@ -1,3 +1,10 @@
+# License private key — never commit
+license_tools/private_key.pem
+
+# Delivery zip archives (large binaries, share out-of-band)
+releases/zips/
+
+osrm_resources/*.zip
 data/api_snapshots
 data/runs
 tests/
@@ -8,3 +15,10 @@ experiments/
 __pycache__/
 *.py[cod]
 *$py.class   
+# Build artifacts (PyInstaller + pip install -e .)
+build/
+dist/
+src/*.egg-info/
+
+# Runtime profiling outputs
+data/profiling/

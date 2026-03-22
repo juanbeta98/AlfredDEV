@@ -339,6 +339,44 @@ Model params:
 
 ---
 
+## AlfredProd — Customer Delivery
+
+AlfredDEV is the internal development environment. When delivering to a customer, a filtered snapshot called **AlfredProd** is generated — it contains the full pipeline but replaces the solver source code with a compiled binary (`alfred_solver`).
+
+### Building the binary
+
+The binary must be built once (and rebuilt after any solver changes):
+
+```bash
+pyinstaller alfred_solver.spec --distpath dist/
+```
+
+Requires `pyinstaller` in the active Python environment:
+```bash
+pip install pyinstaller
+```
+
+> The binary must be built on the same OS as the target deployment machine (macOS binary for macOS, Linux binary for Linux).
+
+### Generating AlfredProd
+
+```bash
+./scripts/build_prod.sh --output-dir ../AlfredProd --binary dist/alfred_solver
+```
+
+Re-run this script whenever anything in AlfredDEV changes. It wipes and regenerates AlfredProd from scratch — no manual sync needed.
+
+### Licensing
+
+The binary requires a valid license file on every run. License files are issued per customer using the tools in `license_tools/`. See [`license_tools/README.md`](license_tools/README.md) for the full operator guide.
+
+The customer must set:
+```bash
+export ALFRED_LICENSE=/path/to/alfred_license.json
+```
+
+---
+
 ## Repo Layout
 
 ```
@@ -357,6 +395,21 @@ Model params:
 │   └── master_data/
 └── scripts/
 ```
+
+---
+
+## Exit Codes
+
+| Code | Source | Meaning |
+|------|--------|---------|
+| 0 | orchestrator / check_availability | Success |
+| 1 | alfred_cli / orchestrator | Bad request file, unknown action, config or pipeline failure |
+| 2 | alfred_solver binary | Input deserialization error |
+| 3 | alfred_solver binary | Solver execution error |
+| 4 | alfred_solver binary | Output serialization error |
+| 5 | alfred_solver / license_check | License missing, invalid, expired, or tampered |
+
+Codes 2–4 come from the internal solver binary and surface when the binary subprocess fails. Code 5 is reserved exclusively for license failures.
 
 ---
 
