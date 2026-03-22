@@ -1,0 +1,180 @@
+{
+  "_comment": [
+    "Pico y placa restriction rules by department.",
+    "",
+    "Structure:",
+    "  departments.<dept_code>.rules[] — ordered list of rule blocks.",
+    "  The first rule whose date range contains the check date is used.",
+    "  A rule without effective_from/effective_until applies to all dates.",
+    "",
+    "Logic types:",
+    "  'parity'  — based on day-of-month odd/even.",
+    "              restrictions.odd  = digits blocked on odd days  (1,3,5,...)",
+    "              restrictions.even = digits blocked on even days (2,4,6,...)",
+    "  'weekday' — based on ISO weekday name (Monday–Friday).",
+    "              restrictions.<DayName> = list of digits blocked that day.",
+    "              Absent weekday key = no restriction that day.",
+    "              Saturday and Sunday are never restricted (all plates may circulate).",
+    "",
+    "Digit values are the last character of the license plate ('0'–'9' as strings).",
+    "",
+    "To update a rotating schedule:",
+    "  1. Set effective_until on the current rule to the last day of its validity.",
+    "  2. Add a new rule block with effective_from set to the first day of the new period.",
+    "  3. Fill in the new restrictions.",
+    "",
+    "Departments absent from this file have no restriction (all plates pass through)."
+  ],
+
+  "departments": {
+
+    "25": {
+      "name": "CUNDINAMARCA (Bogotá)",
+      "rules": [
+        {
+          "logic": "parity",
+          "restrictions": {
+            "odd":  ["6", "7", "8", "9", "0"],
+            "even": ["1", "2", "3", "4", "5"]
+          }
+        }
+      ]
+    },
+
+    "5": {
+      "name": "ANTIOQUIA (Medellín)",
+      "rules": [
+        {
+          "logic": "weekday",
+          "restrictions": {
+            "Monday":    ["6", "9"],
+            "Tuesday":   ["5", "7"],
+            "Wednesday": ["8", "3"],
+            "Thursday":  ["4", "2"],
+            "Friday":    ["1", "0"]
+          }
+        }
+      ]
+    },
+
+    "76": {
+      "name": "VALLE DEL CAUCA (Cali)",
+      "rules": [
+        {
+          "logic": "weekday",
+          "restrictions": {
+            "Monday":    ["1", "2"],
+            "Tuesday":   ["3", "4"],
+            "Wednesday": ["5", "6"],
+            "Thursday":  ["7", "8"],
+            "Friday":    ["9", "0"]
+          }
+        }
+      ]
+    },
+
+    "66": {
+      "name": "RISARALDA (Pereira)",
+      "rules": [
+        {
+          "logic": "weekday",
+          "effective_until": "2026-06-30",
+          "restrictions": {
+            "Monday":    ["3", "4"],
+            "Tuesday":   ["5", "6"],
+            "Wednesday": ["7", "8"],
+            "Thursday":  ["9", "0"],
+            "Friday":    ["1", "2"]
+          }
+        },
+        {
+          "_comment": "Next rotation — update restrictions when schedule changes.",
+          "logic": "weekday",
+          "effective_from": "2026-07-01",
+          "restrictions": {
+            "Monday":    ["1", "2"],
+            "Tuesday":   ["3", "4"],
+            "Wednesday": ["5", "6"],
+            "Thursday":  ["7", "8"],
+            "Friday":    ["9", "0"]
+          }
+        }
+      ]
+    },
+
+    "13": {
+      "name": "BOLÍVAR (Cartagena)",
+      "rules": [
+        {
+          "logic": "weekday",
+          "effective_until": "2026-03-31",
+          "restrictions": {
+            "Monday":    ["5", "6"],
+            "Tuesday":   ["7", "8"],
+            "Wednesday": ["9", "0"],
+            "Thursday":  ["1", "2"],
+            "Friday":    ["3", "4"]
+          }
+        },
+        {
+          "_comment": "Next rotation — update restrictions when schedule changes.",
+          "logic": "weekday",
+          "effective_from": "2026-04-01",
+          "restrictions": {
+            "Monday":    [],
+            "Tuesday":   [],
+            "Wednesday": [],
+            "Thursday":  [],
+            "Friday":    []
+          }
+        }
+      ]
+    },
+
+    "54": {
+      "name": "NORTE DE SANTANDER (Cúcuta)",
+      "rules": [
+        {
+          "logic": "weekday",
+          "restrictions": {
+            "Monday":    ["1", "2"],
+            "Tuesday":   ["3", "4"],
+            "Wednesday": ["5", "6"],
+            "Thursday":  ["7", "8"],
+            "Friday":    ["9", "0"]
+          }
+        }
+      ]
+    },
+
+    "68": {
+      "name": "SANTANDER (Bucaramanga)",
+      "rules": [
+        {
+          "logic": "weekday",
+          "effective_until": "2026-03-31",
+          "restrictions": {
+            "Monday":    ["1", "2"],
+            "Tuesday":   ["3", "4"],
+            "Wednesday": ["5", "6"],
+            "Thursday":  ["7", "8"],
+            "Friday":    ["9", "0"]
+          }
+        },
+        {
+          "_comment": "Next rotation — update restrictions when schedule changes.",
+          "logic": "weekday",
+          "effective_from": "2026-04-01",
+          "restrictions": {
+            "Monday":    [],
+            "Tuesday":   [],
+            "Wednesday": [],
+            "Thursday":  [],
+            "Friday":    []
+          }
+        }
+      ]
+    }
+
+  }
+}

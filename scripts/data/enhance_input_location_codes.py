@@ -3,14 +3,14 @@ Enhance local model input CSV with normalized location code columns.
 
 Behavior:
 1) Rename input column `city` to `city_code` (if needed).
-2) Add/refresh `department_code` by mapping from data/master_data/cities.csv.
+2) Add/refresh `department_code` by mapping from data/master/cities.csv.
 3) Backup the original input file and write the enhanced CSV as `input.csv`.
 
 Usage:
     python3 scripts/data_prep/enhance_input_location_codes.py --apply
     python3 scripts/data_prep/enhance_input_location_codes.py --apply \
-        --input-path data/model_input/input.csv \
-        --cities-path data/master_data/cities.csv
+        --input-path data/examples/input.csv \
+        --cities-path data/master/cities.csv
 """
 from __future__ import annotations
 

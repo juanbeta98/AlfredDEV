@@ -1,5 +1,5 @@
 """
-Build local `data/model_input/driver_directory.csv` from raw driver directory CSV.
+Build local `data/examples/driver_directory.csv` from raw driver directory CSV.
 """
 from __future__ import annotations
 

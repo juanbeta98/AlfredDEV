@@ -1,5 +1,5 @@
 """
-Build local `data/model_input/input.csv` from raw service CSV files.
+Build local `data/examples/input.csv` from raw service CSV files.
 
 This script is intentionally independent from runtime (`main.py`):
 run it only when you need to refresh local input from raw extracts.
