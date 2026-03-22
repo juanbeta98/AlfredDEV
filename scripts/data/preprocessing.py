@@ -5,9 +5,11 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Optional, Union, Tuple
 
-from src.data.distance_utils import distance
-from src.utils.filtering import filter_valid_services
-from src.config.experimentation_config import codificacion_ciudades
+from alfred.optimization.common.distance_utils import distance
+# NOTE: alfred.utils.filtering no longer exists — this import is a legacy stub
+# from alfred.utils.filtering import filter_valid_services
+# NOTE: alfred.config.experimentation_config no longer exists — load city codes from data/master/cities.csv
+# from alfred.config.experimentation_config import codificacion_ciudades
 
 
 def generate_labors_raw_df(

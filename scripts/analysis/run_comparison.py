@@ -12,12 +12,9 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-_PROJECT_ROOT = Path(__file__).resolve().parents[2]
-if str(_PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(_PROJECT_ROOT))
 
-from src.analysis.compare_solutions import compare
-from src.optimization.settings.solver_settings import DEFAULT_DISTANCE_METHOD
+from alfred.analysis.compare_solutions import compare
+from alfred.optimization.settings.solver_settings import DEFAULT_DISTANCE_METHOD
 
 # ---------------------------------------------------------------------------
 # CONFIGURATION — edit these before running

@@ -22,24 +22,26 @@ import sys
 from pathlib import Path
 from typing import Any
 
-_PROJECT_ROOT = Path(__file__).resolve().parents[2]
-if str(_PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(_PROJECT_ROOT))
 
 # ---------------------------------------------------------------------------
 # CONFIGURATION — edit these before running
 # ---------------------------------------------------------------------------
-SOLVER_INPUT_FILE = Path("experiments/phase2/cases/input_solver.json")
-BASELINE_FILE     = Path("experiments/phase2/cases/file_snapshots/output_payload.json")
-OUTPUT_FILE       = Path("experiments/phase2/cases/file_snapshots/output_payload_scoped.json")
+SOLVER_INPUT_FILE = Path("experiments/phase4/input/input_solver.json")
+BASELINE_FILE     = Path("experiments/phase4/baseline/Inicio_prueba_542_bogota-services-20260313-after.json")
+OUTPUT_FILE       = Path("experiments/phase4/input/output_payload_scoped.json")
 # ---------------------------------------------------------------------------
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s  %(message)s")
 logger = logging.getLogger(__name__)
 
 
+def _labors(service: dict) -> list:
+    """Return labors regardless of whether the key is snake_case or camelCase."""
+    return service.get("service_labors") or service.get("serviceLabors") or []
+
+
 def _summary(services: list[dict]) -> str:
-    labors = sum(len(s.get("serviceLabors", [])) for s in services)
+    labors = sum(len(_labors(s)) for s in services)
     return f"services={len(services)} labors={labors}"
 
 
@@ -53,7 +55,7 @@ def scope_baseline(
     solver_labor_ids:   set[int] = {
         int(lb["id"])
         for s in solver_services
-        for lb in s.get("serviceLabors", [])
+        for lb in _labors(s)
         if "id" in lb
     }
 
@@ -62,6 +64,7 @@ def scope_baseline(
     baseline_services = baseline.get("data", [])
     result: list[dict[str, Any]] = []
     dropped_services = dropped_labors = 0
+    labor_key = "service_labors" if "service_labors" in (baseline_services[0] if baseline_services else {}) else "serviceLabors"
 
     for svc in baseline_services:
         if int(svc.get("service_id", -1)) not in solver_service_ids:
@@ -69,7 +72,7 @@ def scope_baseline(
             logger.info("  drop service=%s — not in solver scope", svc.get("service_id"))
             continue
 
-        original_labors = svc.get("serviceLabors", [])
+        original_labors = _labors(svc)
         kept = [lb for lb in original_labors if int(lb.get("id", -1)) in solver_labor_ids]
         n_dropped = len(original_labors) - len(kept)
         dropped_labors += n_dropped
@@ -81,7 +84,7 @@ def scope_baseline(
             )
 
         if kept:
-            result.append({**svc, "serviceLabors": kept})
+            result.append({**svc, labor_key: kept})
         else:
             dropped_services += 1
             logger.info("  drop service=%s — no labors remaining after scope filter", svc.get("service_id"))

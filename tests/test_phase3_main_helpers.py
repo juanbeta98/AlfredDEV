@@ -2,7 +2,7 @@ import unittest
 
 import pandas as pd
 
-from main import (
+from alfred.pipeline.orchestrator import (
     _build_assignment_diagnostics_metrics,
     _finalize_assignment_diagnostics,
     _stabilize_results_order,

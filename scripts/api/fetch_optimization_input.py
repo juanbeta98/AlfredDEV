@@ -24,8 +24,6 @@ def _find_repo_root() -> Path:
 
 
 ROOT = _find_repo_root()
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +33,7 @@ logger = logging.getLogger(__name__)
 DEPARTMENT: Optional[int] = None
 START_DATE: Optional[str] = None  # ISO datetime, e.g. "2024-01-01T00:00:00"
 END_DATE: Optional[str] = None  # ISO datetime, e.g. "2024-01-31T23:59:59"
-REQUEST_PATH: Path = ROOT / "request.json"
+REQUEST_PATH: Path = ROOT / "data/examples/request.json"
 
 # Output location
 OUTPUT_DIR = ROOT / "data" / "api_snapshots"
@@ -84,7 +82,7 @@ def _write_json(
     run_id: str,
     request_id: str | None = None,
 ) -> Path:
-    from src.io.artifact_naming import build_artifact_stem, build_run_subdir  # noqa: E402
+    from alfred.data.io.artifact_naming import build_artifact_stem, build_run_subdir  # noqa: E402
 
     output_dir = OUTPUT_DIR / build_run_subdir(run_id)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -217,9 +215,9 @@ def main() -> int:
         )
         return 0
 
-    from src.config import Config  # noqa: E402
-    from src.integration.client import ALFREDAPIClient  # noqa: E402
-    from src.utils.logging_utils import set_run_id, setup_logging_context  # noqa: E402
+    from alfred.config import Config  # noqa: E402
+    from alfred.data.api.client import ALFREDAPIClient  # noqa: E402
+    from alfred.utils.logging_utils import set_run_id, setup_logging_context  # noqa: E402
 
     setup_logging_context()
     run_id = args.run_id or str(uuid.uuid4())[:8]
@@ -236,7 +234,7 @@ def main() -> int:
         max_retries=Config.API_MAX_RETRIES,
     )
 
-    from src.io.artifact_naming import build_run_subdir, finalize_run_manifest, write_run_manifest  # noqa: E402
+    from alfred.data.io.artifact_naming import build_run_subdir, finalize_run_manifest, write_run_manifest  # noqa: E402
 
     run_dir = OUTPUT_DIR / build_run_subdir(run_id)
     run_dir.mkdir(parents=True, exist_ok=True)

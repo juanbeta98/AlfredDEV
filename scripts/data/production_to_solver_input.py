@@ -32,16 +32,13 @@ import sys
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-_PROJECT_ROOT = Path(__file__).resolve().parents[2]
-if str(_PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(_PROJECT_ROOT))
 
 # ---------------------------------------------------------------------------
 # CONFIGURATION — edit these before running
 # ---------------------------------------------------------------------------
-INPUT_FILE   = Path("experiments/phase2/cases/file_snapshots/bogota-services-20260218-solucion.json")
-OUTPUT_FILE  = Path("experiments/phase2/cases/input_solver.json")
-PLANNING_DATE: Optional[str] = "2026-02-18"   # ISO date "YYYY-MM-DD"; None = skip rule 2
+INPUT_FILE   = Path("experiments/phase4/baseline/Inicio_prueba_542_bogota-services-20260313-after.json")
+OUTPUT_FILE  = Path("experiments/phase4/input/input_solver.json")
+PLANNING_DATE: Optional[str] = "2026-03-13"   # ISO date "YYYY-MM-DD"; None = skip rule 2
 # ---------------------------------------------------------------------------
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s  %(message)s")
@@ -61,8 +58,13 @@ def _labor_date(labor: dict[str, Any]) -> Optional[str]:
     return str(sd)[:10] if sd else None
 
 
+def _labors(service: dict[str, Any]) -> list:
+    """Return labors regardless of whether the key is snake_case or camelCase."""
+    return service.get("service_labors") or service.get("serviceLabors") or []
+
+
 def _summary(services: list[dict]) -> str:
-    labors = sum(len(s.get("serviceLabors", [])) for s in services)
+    labors = sum(len(_labors(s)) for s in services)
     return f"services={len(services)} labors={labors}"
 
 
@@ -87,7 +89,7 @@ def rule_filter_services_with_alfred(
     """
     kept, dropped = [], []
     for svc in services:
-        labors_to_check = svc.get("serviceLabors", [])
+        labors_to_check = _labors(svc)
         if planning_date:
             labors_to_check = [lb for lb in labors_to_check if _labor_date(lb) == planning_date]
         has_assignment = any(lb.get("alfred") is not None for lb in labors_to_check)
@@ -124,9 +126,10 @@ def rule_prune_off_date_labors(
     result: list[dict[str, Any]] = []
     total_pruned = 0
     services_dropped = 0
+    labor_key = "service_labors" if "service_labors" in (services[0] if services else {}) else "serviceLabors"
 
     for svc in services:
-        original = svc.get("serviceLabors", [])
+        original = _labors(svc)
         kept     = [lb for lb in original if _labor_date(lb) == planning_date]
         n_pruned = len(original) - len(kept)
         total_pruned += n_pruned
@@ -138,7 +141,7 @@ def rule_prune_off_date_labors(
             )
 
         if kept:
-            result.append({**svc, "serviceLabors": kept})
+            result.append({**svc, labor_key: kept})
         else:
             services_dropped += 1
             logger.info(
@@ -170,16 +173,17 @@ def rule_strip_alfred_assignments(
     """
     result: list[dict[str, Any]] = []
     total_stripped = 0
+    labor_key = "service_labors" if "service_labors" in (services[0] if services else {}) else "serviceLabors"
 
     for svc in services:
         labors = []
-        for lb in svc.get("serviceLabors", []):
+        for lb in _labors(svc):
             is_planning_labor = (planning_date is None) or (_labor_date(lb) == planning_date)
             if is_planning_labor and lb.get("alfred") is not None:
                 lb = {**lb, "alfred": None}
                 total_stripped += 1
             labors.append(lb)
-        result.append({**svc, "serviceLabors": labors})
+        result.append({**svc, labor_key: labors})
 
     logger.info("[rule3] strip_alfred_assignments → assignments_stripped=%s", total_stripped)
     return result
