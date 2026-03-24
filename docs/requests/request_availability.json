@@ -1,0 +1,29 @@
+{
+  "action": "check_availability",
+  "department_id": 25,
+  "department_name": "CUNDINAMARCA",
+  "date": "2026-03-09T14:30:00-05:00",
+  "license_plate": "ABC123",
+  "start_address": {
+    "id": 123456,
+    "name": "Calle 123",
+    "city": "Bogotá",
+    "department": "CUNDINAMARCA",
+    "point": {
+      "x": 123456,
+      "y": 123456,
+      "srid": 123456
+    }
+  },
+  "end_address": {
+    "id": 123456,
+    "name": "Calle 123",
+    "city": "Bogotá",
+    "department": "CUNDINAMARCA",
+    "point": {
+      "x": 123456,
+      "y": 123456,
+      "srid": 123456
+    }
+  }
+}

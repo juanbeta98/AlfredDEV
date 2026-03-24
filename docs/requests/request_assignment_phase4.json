@@ -1,0 +1,23 @@
+{
+  "action": "generate_assignment",
+  "request_id": "phase4-offline",
+  "_comment": "Phase 4 OFFLINE run — 2026-03-13 Bogota (39 services, 50 labors, 6 drivers)",
+  "timestamp": "2026-03-13T09:15:38-05:00",
+  "filters": {
+    "department": "25",
+    "start_date": "2026-03-13T00:00:00-05:00",
+    "end_date": "2026-03-13T23:59:59-05:00"
+  },
+  "algorithm": {
+    "name": "OFFLINE",
+    "params": {
+      "n_processes": -1,
+      "log_progress": true,
+      "distance_method": "osrm",
+      "time_method": "speed_based"
+    }
+  },
+  "output": {
+    "path": "./experiments/phase4/results"
+  }
+}

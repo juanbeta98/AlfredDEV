@@ -273,9 +273,8 @@ Registered algorithms are defined in `src/optimization/algorithms/registry.py`:
 | Name         | Status            | Notes |
 |--------------|-------------------|-------|
 | OFFLINE      | Implemented       | Baseline algorithm; supports multi-city iteration. |
-| INSERT       | Stub              | Not implemented (raises `NotImplementedError`). |
-| BUFFER_FIXED | Stub              | Not implemented (raises `NotImplementedError`). |
-| BUFFER_REACT | Stub              | Not implemented (raises `NotImplementedError`). |
+| INSERT       | Implemented       | Inserts new labors into an existing preassigned schedule. |
+| REACT        | Implemented       | Semi-dynamic: freezes near-term labors and re-optimizes the rest. |
 | ALFRED       | Stub              | Not implemented (raises `NotImplementedError`). |
 
 Algorithm selection comes from `OptimizationSettings` or request payload:

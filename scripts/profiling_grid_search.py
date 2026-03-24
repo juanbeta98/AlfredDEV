@@ -6,12 +6,12 @@ Runs a grid of (algorithm x max_iterations) cells against the same input data,
 tracking F.O (total_driver_move_distance_km) and per-stage wall times.
 
 Grid:
-  Algorithms:    OFFLINE, INSERT, BUFFER_REACT
+  Algorithms:    OFFLINE, INSERT, REACT
   max_iterations: 100, 500, 1000, 2000, 5000
   Fixed:         distance_method=osrm, time_method=osrm_times, n_processes=-1
 
-NOTE on BUFFER_REACT: run with context={}, so preassigned={} — all labors are
-treated as new (no frozen schedule). This is a valid benchmarking mode; BUFFER_REACT
+NOTE on REACT: run with context={}, so preassigned={} — all labors are
+treated as new (no frozen schedule). This is a valid benchmarking mode; REACT
 degrades gracefully to near-OFFLINE in this case.
 
 NOTE on reproducibility: alpha=0.3 (GRASP randomness). Results may vary slightly
@@ -92,7 +92,7 @@ from alfred.pipeline.filters import (
 # ---------------------------------------------------------------------------
 # Grid configuration
 # ---------------------------------------------------------------------------
-ALGORITHMS = ["OFFLINE", "INSERT", "BUFFER_REACT"]
+ALGORITHMS = ["OFFLINE", "INSERT", "REACT"]
 MAX_ITERATIONS_GRID = [100, 500, 1000, 2000, 5000]
 DEPT_CODES = ["25", "5", "76", "8", "13", "68", "66"]
 
