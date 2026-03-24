@@ -3,10 +3,13 @@
 # build_prod.sh — Generate the AlfredProd deliverable from AlfredDEV.
 #
 # Usage:
-#   ./scripts/build_prod.sh [--output-dir <path>] [--binary <path>] [--skip-binary]
+#   ./scripts/build_prod.sh --type prod|dev [--output-dir <path>] [--binary <path>] [--skip-binary]
 #
 # Options:
-#   --output-dir <path>   Where to write AlfredProd. Default: ../AlfredProd
+#   --type prod|dev       Build type (required). Controls output subdirectory:
+#                           prod → builds/PROD/AlfredProd
+#                           dev  → builds/DEV/AlfredProd
+#   --output-dir <path>   Override output directory (optional; used internally by deliver.sh).
 #   --binary <path>       Path to the alfred_solver binary to ship.
 #                         Default: dist/alfred_solver (built by PyInstaller here).
 #   --skip-binary         Don't copy a binary (useful when building the binary separately).
@@ -37,7 +40,8 @@ set -euo pipefail
 # ---------------------------------------------------------------------------
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEV_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-OUTPUT_DIR="$(cd "${DEV_ROOT}/.." && pwd)/AlfredProd"
+BUILD_TYPE=""
+OUTPUT_DIR=""
 BINARY_PATH="${DEV_ROOT}/dist/alfred_solver"
 SKIP_BINARY=false
 
@@ -46,6 +50,8 @@ SKIP_BINARY=false
 # ---------------------------------------------------------------------------
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        --type)
+            BUILD_TYPE="$2"; shift 2 ;;
         --output-dir)
             OUTPUT_DIR="$2"; shift 2 ;;
         --binary)
@@ -59,6 +65,21 @@ while [[ $# -gt 0 ]]; do
             echo "Unknown option: $1" >&2; exit 1 ;;
     esac
 done
+
+# ---------------------------------------------------------------------------
+# Resolve output directory
+# ---------------------------------------------------------------------------
+if [[ -z "${OUTPUT_DIR}" ]]; then
+    if [[ -z "${BUILD_TYPE}" ]]; then
+        echo "ERROR: --type prod|dev is required (or provide --output-dir explicitly)" >&2
+        exit 1
+    fi
+    case "${BUILD_TYPE}" in
+        prod) OUTPUT_DIR="${DEV_ROOT}/builds/PROD/AlfredProd" ;;
+        dev)  OUTPUT_DIR="${DEV_ROOT}/builds/DEV/AlfredProd" ;;
+        *)    echo "ERROR: --type must be 'prod' or 'dev'" >&2; exit 1 ;;
+    esac
+fi
 
 # ---------------------------------------------------------------------------
 # Validate inputs
@@ -96,6 +117,8 @@ echo "[2/7] Copying AlfredDEV to AlfredProd (excluding algorithm sources)..."
 rsync -a \
     --exclude=".git" \
     --exclude=".env" \
+    --exclude="LICENSE" \
+    --exclude="license" \
     --exclude="__pycache__" \
     --exclude="*.py[cod]" \
     --exclude="*.egg-info" \
@@ -112,6 +135,23 @@ rsync -a \
     --exclude="notebooks/" \
     --exclude="docs/" \
     --exclude="tests/" \
+    --exclude="experiments/" \
+    --exclude="license_tools/" \
+    --exclude="releases/" \
+    --exclude="builds/" \
+    --exclude="osrm_resources/" \
+    --exclude="output/" \
+    --exclude="data/runs/" \
+    --exclude="data/api_snapshots/" \
+    --exclude="data/profiling/" \
+    --exclude="data/examples/" \
+    --exclude="request.json" \
+    --exclude="request2.json" \
+    --exclude="request/" \
+    --exclude="validate_deployment.py" \
+    --exclude=".env.docker" \
+    --exclude="Dockerfile" \
+    --exclude="docker-compose.yml" \
     "${DEV_ROOT}/" \
     "${OUTPUT_DIR}/"
 

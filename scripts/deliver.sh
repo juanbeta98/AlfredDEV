@@ -83,19 +83,25 @@ if [[ "$BUILD_TYPE" == "prod" && -z "$EXPIRES" ]]; then
     echo "ERROR: --expires is required for prod builds" >&2; exit 1
 fi
 
-# Force CODE to uppercase
-CODE="${CODE^^}"
+# Force CODE to uppercase (tr used for macOS bash 3.2 compatibility)
+CODE="$(echo "$CODE" | tr '[:lower:]' '[:upper:]')"
 
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
 RELEASES_DIR="${REPO_ROOT}/releases"
 LICENSES_DIR="${RELEASES_DIR}/licenses"
-ZIPS_DIR="${RELEASES_DIR}/zips"
 LOG_CSV="${RELEASES_DIR}/log.csv"
-BUILD_TMP="${RELEASES_DIR}/build_tmp"
 
-mkdir -p "${LICENSES_DIR}" "${ZIPS_DIR}"
+BUILDS_DIR="${REPO_ROOT}/builds"
+if [[ "$BUILD_TYPE" == "prod" ]]; then
+    TYPE_DIR="${BUILDS_DIR}/PROD"
+else
+    TYPE_DIR="${BUILDS_DIR}/DEV"
+fi
+BUILD_TMP="${TYPE_DIR}/build_tmp"
+
+mkdir -p "${LICENSES_DIR}" "${TYPE_DIR}"
 
 # ---------------------------------------------------------------------------
 # Step 1: Determine release ID
@@ -110,7 +116,7 @@ if [[ "$BUILD_TYPE" == "prod" ]]; then
             | grep -oE '^R[0-9]+' \
             | grep -oE '[0-9]+' \
             | sort -n \
-            | tail -1)
+            | tail -1 || true)
     else
         LAST_N=""
     fi
@@ -179,17 +185,12 @@ fi
 # ---------------------------------------------------------------------------
 # Step 5: Zip
 # ---------------------------------------------------------------------------
-ZIP_PATH="${ZIPS_DIR}/${RELEASE_ID}.zip"
+ZIP_PATH="${TYPE_DIR}/${RELEASE_ID}.zip"
 echo "==> Creating zip → ${ZIP_PATH}"
-(cd "${RELEASES_DIR}" && zip -r "${ZIP_PATH}" "build_tmp" -x "build_tmp/.git/*")
-# Rename the top-level folder inside the zip to the release ID
-# (zip was created as build_tmp/; repack with correct name)
-TMP_REPACK="${RELEASES_DIR}/_repack_tmp"
-mkdir -p "${TMP_REPACK}"
-mv "${BUILD_TMP}" "${TMP_REPACK}/${RELEASE_ID}"
-rm -f "${ZIP_PATH}"
-(cd "${TMP_REPACK}" && zip -r "${ZIP_PATH}" "${RELEASE_ID}")
-rm -rf "${TMP_REPACK}"
+# Rename build_tmp to release ID so the zip has a clean top-level folder name
+mv "${BUILD_TMP}" "${TYPE_DIR}/${RELEASE_ID}"
+(cd "${TYPE_DIR}" && zip -r "${ZIP_PATH}" "${RELEASE_ID}" -x "${RELEASE_ID}/.git/*")
+rm -rf "${TYPE_DIR}/${RELEASE_ID}"
 
 # ---------------------------------------------------------------------------
 # Step 6: Append to log.csv
@@ -201,10 +202,11 @@ else
     LOG_EXPIRES=""
 fi
 
-# Escape any commas in NOTES
-NOTES_SAFE="${NOTES//,/;}"
+# Escape any commas in NOTES (tr used for macOS bash 3.2 compatibility)
+NOTES_SAFE="$(echo "$NOTES" | tr ',' ';')"
+BUILD_TYPE_UPPER="$(echo "$BUILD_TYPE" | tr '[:lower:]' '[:upper:]')"
 
-echo "${BUILD_TYPE^^},${RELEASE_ID},${CUSTOMER},${ISSUED_AT},${LOG_EXPIRES},${BINARY_HASH},${NOTES_SAFE}" >> "${LOG_CSV}"
+echo "${BUILD_TYPE_UPPER},${RELEASE_ID},${CUSTOMER},${ISSUED_AT},${LOG_EXPIRES},${BINARY_HASH},${NOTES_SAFE}" >> "${LOG_CSV}"
 
 # ---------------------------------------------------------------------------
 # Step 7: Summary
@@ -213,7 +215,7 @@ echo ""
 echo "============================================================"
 echo " Delivery complete: ${RELEASE_ID}"
 echo "------------------------------------------------------------"
-echo " Type:        ${BUILD_TYPE^^}"
+echo " Type:        ${BUILD_TYPE_UPPER}"
 echo " Customer:    ${CUSTOMER}"
 echo " Issued:      ${ISSUED_AT}"
 if [[ "$BUILD_TYPE" == "prod" ]]; then
