@@ -85,7 +85,7 @@ import argparse
 #     run_INSERT_algo: bool,
 #     run_INSERT_BUFFER_algo: bool,
 #     run_REACT_algo: bool,
-#     run_REACT_BUFFER_algo: bool,
+#     run_REACT_algo_v2: bool,
 #     run_ALFRED_algo: bool,
 #     instance: str,
 #     optimization_obj: str,
@@ -107,8 +107,8 @@ import argparse
 #         active_algos.append("INSERT BUFFER")
 #     if run_REACT_algo:
 #         active_algos.append("REACT")
-#     if run_REACT_BUFFER_algo:
-#         active_algos.append("REACT BUFFER")
+#     if run_REACT_algo_v2:
+#         active_algos.append("REACT")
 #     if run_ALFRED_algo:
 #         active_algos.append("ALFRED")
 

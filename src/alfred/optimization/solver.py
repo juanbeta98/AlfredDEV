@@ -8,7 +8,7 @@ from typing import Any, Dict, Tuple, Optional
 import pandas as pd
 
 from alfred.data.id_normalization import normalize_id_columns
-from alfred.optimization.algorithms.buffer_react import algorithm
+from alfred.optimization.algorithms.react import algorithm
 from alfred.utils.datetime_utils import normalize_datetime_columns_to_colombia, now_colombia
 
 from .algorithms.registry import get_algorithm
@@ -68,8 +68,8 @@ class OptimizationSolver:
             # ---------------------------------------------
             algo_name = self.settings.algorithm.strip().upper()
 
-            # TODO(cleanup): remove when BUFFER_REACT is fully integrated
-            if algo_name == "BUFFER_REACT" and os.getenv("ALFRED_BUFFER_REACT_AS_INSERT", "0") == "1":
+            # TODO(cleanup): remove when REACT is fully integrated
+            if algo_name == "REACT" and os.getenv("ALFRED_REACT_AS_INSERT", "0") == "1":
                 algo_name = "INSERT"
 
             algo_params = self.settings.for_algorithm(algo_name)
@@ -353,10 +353,10 @@ class OptimizationSolver:
             raise SolverExecutionError("Algorithm did not return a DataFrame")
 
         # common expectation: results correspond to input rows
-        # BUFFER_REACT intentionally returns fewer rows (frozen labors excluded;
+        # REACT intentionally returns fewer rows (frozen labors excluded;
         # main.py merges them back), so skip the check for that algorithm.
         _algo = getattr(self, "_algo_name", "")
-        if _algo != "BUFFER_REACT" and len(results_df) != len(self.input_df):
+        if _algo != "REACT" and len(results_df) != len(self.input_df):
             logger.warning(
                 "Result row count differs from input",
                 extra={"in": len(self.input_df), "out": len(results_df)},

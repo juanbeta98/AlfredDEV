@@ -38,7 +38,7 @@ class OptimizationSettings:
                 "68": 500,
                 "66": 500,
             },
-            "BUFFER_REACT": {
+            "REACT": {
                 "25": 1000,
                 "5":  2000,
                 "76": 2000,

@@ -47,9 +47,8 @@ hidden = [
     "alfred.optimization.algorithms.offline.pipeline",
     "alfred.optimization.algorithms.insert.algorithm",
     "alfred.optimization.algorithms.insert.insert_algorithms",
-    "alfred.optimization.algorithms.buffer_react.algorithm",
-    "alfred.optimization.algorithms.buffer_react.buffer_react_algorithms",
-    "alfred.optimization.algorithms.buffer_fixed.algorithm",
+    "alfred.optimization.algorithms.react.algorithm",
+    "alfred.optimization.algorithms.react.react_algorithms",
     "alfred.optimization.algorithms.alfred.algorithm",
 
     # Common utilities

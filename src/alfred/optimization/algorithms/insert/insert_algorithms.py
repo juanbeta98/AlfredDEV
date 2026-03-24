@@ -9,7 +9,7 @@ evaluating four cases per driver:
   4. After last labor → append at end
 
 For >1 new service, the caller runs multiple iterations with randomised service
-ordering (BUFFER_FIXED style) and selects the best result.
+ordering and selects the best result.
 
 Bug fixes vs. the original INSERT_algorithm.py reference:
   - Case 3:  timedelta(TIEMPO_GRACIA) → timedelta(minutes=TIEMPO_GRACIA)

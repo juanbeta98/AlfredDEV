@@ -125,7 +125,7 @@ def main() -> int:
     # --------------------------------------------------
     # 2. Load request payload (optional)
     # --------------------------------------------------
-    request_path = os.getenv("REQUEST_PATH", "data/examples/request.json")
+    request_path = os.getenv("REQUEST_PATH", "request.json")
     try:
         with log_step("load_request", path=request_path):
             request_payload = load_request(request_path)
@@ -705,7 +705,7 @@ def main() -> int:
                 else:
                     preassigned_for_concat = preassigned_df
                 # Exclude any preassigned labors already covered by the algorithm's output
-                # (e.g. BUFFER_REACT re-optimizes reassignable labors and returns them in
+                # (e.g. REACT re-optimizes reassignable labors and returns them in
                 # results, so concatenating preassigned_df would duplicate those labor_ids).
                 if "labor_id" in results.columns and "labor_id" in preassigned_for_concat.columns:
                     _algo_labor_ids = set(results["labor_id"].dropna().tolist())

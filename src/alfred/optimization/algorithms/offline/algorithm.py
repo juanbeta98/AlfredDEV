@@ -40,7 +40,7 @@ def _run_single_iteration_shared(slim_args: Dict[str, Any]) -> Dict[str, Any]:
 _SHARED_KEYS = frozenset({
     "labors_df", "dist_dict", "time_dict", "directorio_df", "duraciones_df",
     "distance_method", "time_method", "alpha", "model_params", "master_data",
-    "initial_drivers",  # BUFFER_REACT: per-city driver state override (constant across iterations)
+    "initial_drivers",  # REACT: per-city driver state override (constant across iterations)
 })
 
 
@@ -477,7 +477,7 @@ def _run_single_iteration(args: Dict[str, Any]) -> Dict[str, Any]:
         iter_idx=args.get("iter_idx", 0),
         model_params=args.get("model_params"),
         master_data=args.get("master_data"),
-        initial_drivers=args.get("initial_drivers"),  # BUFFER_REACT: frozen driver state override
+        initial_drivers=args.get("initial_drivers"),  # REACT: frozen driver state override
     )
 
     return {

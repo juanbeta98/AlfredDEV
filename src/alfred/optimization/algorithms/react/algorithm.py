@@ -12,7 +12,7 @@ from alfred.optimization.algorithms.offline.algorithm import (
     _city_dist_slice,
     _resolve_n_processes,
 )
-from alfred.optimization.algorithms.buffer_react.buffer_react_algorithms import (
+from alfred.optimization.algorithms.react.react_algorithms import (
     build_post_freeze_driver_states,
     split_labors_by_freeze_cutoff,
     strip_assignment_columns,
@@ -25,9 +25,9 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
-class BufferReactAlgoConfig:
+class ReactAlgoConfig:
     """
-    Configuration for the BUFFER_REACT algorithm.
+    Configuration for the REACT algorithm.
 
     Identical to OfflineAlgoConfig plus ``time_previous_freeze``, which controls
     how many minutes before a labor's scheduled start it becomes frozen.
@@ -41,9 +41,9 @@ class BufferReactAlgoConfig:
     log_progress: bool = False
 
 
-class BufferReactAlgorithm(OfflineAlgorithm):
+class ReactAlgorithm(OfflineAlgorithm):
     """
-    BUFFER_REACT algorithm.
+    REACT algorithm.
 
     Takes an existing schedule from context["preassigned"], freezes labors that
     are at or near their start time, and re-optimizes all remaining labors
@@ -61,7 +61,7 @@ class BufferReactAlgorithm(OfflineAlgorithm):
     timestamp).  Falls back to the current Colombia time when not provided.
     """
 
-    name = "BUFFER_REACT"
+    name = "REACT"
 
     def __init__(self, params: Dict[str, Any] | None = None):
         # Call the base OptimizationAlgorithm init directly — we build our own
@@ -69,7 +69,7 @@ class BufferReactAlgorithm(OfflineAlgorithm):
         OptimizationAlgorithm.__init__(self, params)
         params = params or {}
         max_iterations = params.get("max_iterations")
-        self.config = BufferReactAlgoConfig(
+        self.config = ReactAlgoConfig(
             time_previous_freeze=int(params.get("time_previous_freeze", 0)),
             distance_method=params.get("distance_method") or DEFAULT_DISTANCE_METHOD,
             time_method=params.get("time_method", "speed_based"),
@@ -85,7 +85,7 @@ class BufferReactAlgorithm(OfflineAlgorithm):
 
     def solve(self, df: pd.DataFrame) -> Tuple[pd.DataFrame, Dict[str, Any], Dict[str, Any]]:
         """
-        Execute BUFFER_REACT.
+        Execute REACT.
 
         Returns
         -------
@@ -109,7 +109,7 @@ class BufferReactAlgorithm(OfflineAlgorithm):
         freeze_cutoff = decision_time + timedelta(minutes=self.config.time_previous_freeze)
 
         logger.info(
-            "buffer_react_solve decision_time=%s freeze_cutoff=%s time_previous_freeze=%d",
+            "react_solve decision_time=%s freeze_cutoff=%s time_previous_freeze=%d",
             decision_time, freeze_cutoff, self.config.time_previous_freeze,
         )
 
@@ -144,7 +144,7 @@ class BufferReactAlgorithm(OfflineAlgorithm):
 
         # ---- Short-circuit when nothing to optimize --------------------------
         if combined_df.empty:
-            logger.info("buffer_react_solve: no labors to optimize; returning frozen state")
+            logger.info("react_solve: no labors to optimize; returning frozen state")
             results_df = frozen_labors if not frozen_labors.empty else pd.DataFrame()
             moves_df   = frozen_moves  if not frozen_moves.empty  else pd.DataFrame()
             metrics = self._build_metrics(
@@ -200,18 +200,18 @@ class BufferReactAlgorithm(OfflineAlgorithm):
                         time_dict = _precomp_time
                         merged_time_dict.update(time_dict)
                         logger.info(
-                            "buffer_react osrm_precompute city=%s unique_points=%d pairs=%d",
+                            "react_osrm_precompute city=%s unique_points=%d pairs=%d",
                             city_key, len(_all_points), len(_precomp_dist),
                         )
                     else:
                         logger.warning(
-                            "buffer_react osrm_precompute_failed city=%s", city_key,
+                            "react_osrm_precompute_failed city=%s", city_key,
                         )
 
             max_iter = self._get_max_iter(city_key)
             _mode = "parallel" if (self.config.n_processes or 1) > 1 else "sequential"
             logger.info(
-                "buffer_react city_iteration_start city=%s n_iter=%d mode=%s",
+                "react_city_iteration_start city=%s n_iter=%d mode=%s",
                 city_key, max_iter, _mode,
             )
 
@@ -310,4 +310,4 @@ class BufferReactAlgorithm(OfflineAlgorithm):
         }
         missing = required_cols - set(df.columns)
         if missing:
-            raise ValueError(f"BUFFER_REACT algorithm missing required columns: {sorted(missing)}")
+            raise ValueError(f"REACT algorithm missing required columns: {sorted(missing)}")

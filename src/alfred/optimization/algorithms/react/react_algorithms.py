@@ -1,5 +1,5 @@
 """
-Helper functions for the BUFFER_REACT algorithm.
+Helper functions for the REACT algorithm.
 
 These functions handle the "freeze horizon" logic: splitting an existing schedule
 into frozen labors (keep as-is) and reassignable labors (re-optimize), and building
@@ -72,7 +72,7 @@ def split_labors_by_freeze_cutoff(
     n_frozen = len(frozen_labors)
     n_reassignable = len(reassignable_labors)
     logger.info(
-        "buffer_react_split freeze_cutoff=%s frozen=%d reassignable=%d",
+        "react_split freeze_cutoff=%s frozen=%d reassignable=%d",
         freeze_cutoff, n_frozen, n_reassignable,
     )
 
@@ -137,7 +137,7 @@ def build_post_freeze_driver_states(
             "available": pd.Timestamp(last["actual_end"]),
         }
 
-    logger.debug("buffer_react post_freeze_driver_states drivers=%d", len(overrides))
+    logger.debug("react_post_freeze_driver_states drivers=%d", len(overrides))
     return overrides
 
 

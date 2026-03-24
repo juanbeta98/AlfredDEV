@@ -65,7 +65,7 @@ def run_assignment_algorithm(
         model_params = ModelParams()
     model_params.validate()
     iteration_index = kwargs.pop("iter_idx", 0)
-    # Pop BUFFER_REACT driver-state overrides before forwarding kwargs downstream.
+    # Pop REACT driver-state overrides before forwarding kwargs downstream.
     # When provided, each entry overrides the position/available of that driver
     # to reflect the end-state of their frozen labors.
     initial_drivers_override = kwargs.pop("initial_drivers", None)
