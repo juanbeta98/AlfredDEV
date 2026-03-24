@@ -33,7 +33,7 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 # Embedded constants — updated by license_tools/embed_public_key.py
 # ---------------------------------------------------------------------------
-_PUBLIC_KEY_B64 = "MCowBQYDK2VwAyEAK23XYx2IxYyqS8oDlAKA8Z9wqH1PX1mRnDPMtfOsyxE="
+_PUBLIC_KEY_B64 = "MCowBQYDK2VwAyEARxoLdo8zG6C/12IUpx2WN6oDm3PiGrm9B4PEU1nMMDU="
 _KEY_ID = "v1"  # updated alongside _PUBLIC_KEY_B64 by embed_public_key.py
 
 
