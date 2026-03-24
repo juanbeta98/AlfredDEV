@@ -14,7 +14,7 @@ Usage
     python alfred.py --request tests/availability/request_availability.json
 
 The --request flag can be omitted if the REQUEST_PATH environment variable
-is set (falls back to "data/examples/request.json" if neither is provided).
+is set (falls back to "request.json" if neither is provided).
 """
 
 import argparse
@@ -38,7 +38,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    request_path = args.request or os.environ.get("REQUEST_PATH", "data/examples/request.json")
+    request_path = args.request or os.environ.get("REQUEST_PATH", "request.json")
 
     try:
         with open(request_path, encoding="utf-8") as f:
