@@ -1,8 +1,8 @@
 # License private key — never commit
 license_tools/private_key.pem
 
-# Delivery zip archives (large binaries, share out-of-band)
-releases/zips/
+# Build artifacts — zips and staging dirs (share out-of-band)
+builds/
 
 osrm_resources/*.zip
 data/api_snapshots
@@ -22,3 +22,10 @@ src/*.egg-info/
 
 # Runtime profiling outputs
 data/profiling/
+
+# Docker
+osrm_resources/osrm_data/
+output/
+request/
+!request/.gitkeep
+!output/.gitkeep

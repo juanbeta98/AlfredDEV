@@ -1,0 +1,2 @@
+type,release_id,customer,issued_at,expires,binary_hash,notes
+PROD,R1_ALFRED,Alfred,2026-03-24,2026-12-31,0f93607ed22079d4272ef552c023d8d280e37810ed555bfbaa459ef84bb62ea8,prod build
