@@ -1,0 +1,60 @@
+[
+  {
+    "case": "ok",
+    "description": "Desired slot is available",
+    "output": {
+      "data": {
+        "result": "ok",
+        "message": "Horario disponible",
+        "department": "BOGOTA",
+        "requested_schedule": "2026-03-23T10:00:00",
+        "confirmed_schedule": "2026-03-23T10:00:00"
+      }
+    }
+  },
+  {
+    "case": "occupied",
+    "description": "Desired slot unavailable and no alternatives found for the day",
+    "output": {
+      "data": {
+        "result": "occupied",
+        "message": "No hay disponibilidad para este día, seleccione otra fecha",
+        "department": "BOGOTA",
+        "requested_schedule": "2026-03-23T10:00:00"
+      }
+    }
+  },
+  {
+    "case": "reschedule",
+    "description": "Desired slot unavailable but alternatives exist",
+    "output": {
+      "data": {
+        "result": "reschedule",
+        "message": "Horario no disponible, se sugieren alternativas",
+        "department": "BOGOTA",
+        "requested_schedule": "2026-03-23T10:00:00",
+        "available_schedules": [
+          "2026-03-23T10:30:00",
+          "2026-03-23T11:00:00",
+          "2026-03-23T11:30:00",
+          "2026-03-23T12:00:00",
+          "2026-03-23T12:30:00",
+          "2026-03-23T13:00:00",
+          "2026-03-23T13:30:00"
+        ]
+      }
+    }
+  },
+  {
+    "case": "error",
+    "description": "Unrecoverable failure (invalid request, schedule API down, etc.)",
+    "output": {
+      "data": {
+        "result": "error",
+        "message": "Schedule load failed: connection refused",
+        "department": null,
+        "requested_schedule": null
+      }
+    }
+  }
+]

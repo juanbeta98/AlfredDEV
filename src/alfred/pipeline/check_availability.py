@@ -49,21 +49,49 @@ Supports two request formats (auto-detected):
 
 Output JSON format
 ------------------
+ok — desired slot is feasible:
 {
-    "service_id": "SVC-001",
-    "desired_slot": {
-        "slot_time": "2026-03-04T09:00:00-05:00",
-        "feasible": false,
-        "reason": "no_driver"
-    },
-    "scan_performed": true,
-    "total_slots_checked": 24,
-    "schedule_date": "2026-03-04",
-    "feasible_slots": [
-        {"slot_time": "2026-03-04T10:00:00-05:00", "feasible": true},
-        {"slot_time": "2026-03-04T10:30:00-05:00", "feasible": true}
-    ],
-    "error": null
+    "data": {
+        "result": "ok",
+        "message": "Horario disponible",
+        "department": "CUNDINAMARCA",
+        "requested_schedule": "2026-03-04T09:00:00",
+        "confirmed_schedule": "2026-03-04T09:00:00"
+    }
+}
+
+occupied — desired slot infeasible, no alternatives:
+{
+    "data": {
+        "result": "occupied",
+        "message": "No hay disponibilidad para este día, seleccione otra fecha",
+        "department": "CUNDINAMARCA",
+        "requested_schedule": "2026-03-04T09:00:00"
+    }
+}
+
+reschedule — desired slot infeasible, alternatives found:
+{
+    "data": {
+        "result": "reschedule",
+        "message": "Horario no disponible, se sugieren alternativas",
+        "department": "CUNDINAMARCA",
+        "requested_schedule": "2026-03-04T09:00:00",
+        "available_schedules": [
+            "2026-03-04T10:00:00",
+            "2026-03-04T10:30:00"
+        ]
+    }
+}
+
+error — unrecoverable failure:
+{
+    "data": {
+        "result": "error",
+        "message": "<error description>",
+        "department": null,
+        "requested_schedule": null
+    }
 }
 """
 
@@ -92,19 +120,21 @@ def run(data: Dict[str, Any]) -> Dict[str, Any]:
     Config.validate()
     Config.configure_logging()
 
+    department = data.get("department_name") or data.get("department_code") or None
+
     try:
         request = _parse_request(data)
     except (KeyError, ValueError, TypeError) as exc:
         logger.error("Invalid request format: %s", exc)
-        return _error_dict(data.get("service_id") or str(data.get("department_id", "unknown")), str(exc))
+        return _error_dict(str(exc))
 
     try:
         response = check_availability(request)
     except Exception as exc:
         logger.exception("availability_check_failed")
-        return _error_dict(request.service_id, str(exc))
+        return _error_dict(str(exc))
 
-    return _serialize_response(response)
+    return _serialize_response(response, department)
 
 
 def main() -> int:
@@ -133,7 +163,7 @@ def main() -> int:
 
     result = run(data)
     print(json.dumps(result, indent=2, ensure_ascii=False))
-    return 0 if result.get("error") is None else 1
+    return 0 if result.get("data", {}).get("result") != "error" else 1
 
 
 def _parse_request(data: Dict[str, Any]) -> ServiceRequest:
@@ -168,44 +198,54 @@ def _parse_request(data: Dict[str, Any]) -> ServiceRequest:
     )
 
 
-def _serialize_response(response: AvailabilityResponse) -> Dict[str, Any]:
-    return {
-        "service_id": response.service_id,
-        "desired_slot": {
-            "slot_time": _fmt_ts(response.desired_slot_result.slot_time),
-            "feasible": response.desired_slot_result.feasible,
-            "reason": response.desired_slot_result.reason,
-        },
-        "scan_performed": response.scan_performed,
-        "total_slots_checked": response.total_slots_checked,
-        "schedule_date": response.schedule_date_str,
-        "feasible_slots": [
-            {
-                "slot_time": _fmt_ts(s.slot_time),
-                "feasible": True,
-            }
-            for s in response.feasible_slots
-        ],
-        "error": response.error,
-    }
+def _serialize_response(response: AvailabilityResponse, department: Optional[str]) -> Dict[str, Any]:
+    requested = _fmt_ts(response.desired_slot_result.slot_time)
+
+    if response.error:
+        return _error_dict(response.error)
+
+    if response.desired_slot_result.feasible:
+        return {"data": {
+            "result": "ok",
+            "message": "Horario disponible",
+            "department": department,
+            "requested_schedule": requested,
+            "confirmed_schedule": requested,
+        }}
+
+    if not response.feasible_slots:
+        return {"data": {
+            "result": "occupied",
+            "message": "No hay disponibilidad para este día, seleccione otra fecha",
+            "department": department,
+            "requested_schedule": requested,
+        }}
+
+    return {"data": {
+        "result": "reschedule",
+        "message": "Horario no disponible, se sugieren alternativas",
+        "department": department,
+        "requested_schedule": requested,
+        "available_schedules": [_fmt_ts(s.slot_time) for s in response.feasible_slots],
+    }}
 
 
-def _error_dict(service_id: str, message: str) -> Dict[str, Any]:
-    return {
-        "service_id": service_id,
-        "desired_slot": None,
-        "scan_performed": False,
-        "total_slots_checked": 0,
-        "schedule_date": None,
-        "feasible_slots": [],
-        "error": message,
-    }
+def _error_dict(message: str) -> Dict[str, Any]:
+    return {"data": {
+        "result": "error",
+        "message": message,
+        "department": None,
+        "requested_schedule": None,
+    }}
 
 
 def _fmt_ts(ts: Optional[Any]) -> Optional[str]:
     if ts is None:
         return None
-    return ts.isoformat() if hasattr(ts, "isoformat") else str(ts)
+    if hasattr(ts, "replace"):
+        # Strip timezone info to produce naive ISO format (YYYY-MM-DDTHH:MM:SS)
+        return ts.replace(tzinfo=None).isoformat()
+    return str(ts)
 
 
 if __name__ == "__main__":
