@@ -4,12 +4,12 @@ from datetime import date, datetime
 from typing import Any, Dict, Optional
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from dotenv import load_dotenv
+from dotenv import load_dotenv, find_dotenv
 
 from alfred.utils.datetime_utils import utc_to_colombia_timestamp
 
-# Load .env file early
-load_dotenv()
+# Load .env — search from CWD upward so it works regardless of invocation directory
+load_dotenv(find_dotenv(usecwd=True))
 
 
 class Config:
