@@ -162,6 +162,49 @@ echo "[2b/7] Installing prod README..."
 cp "${DEV_ROOT}/docs/README_PROD.md" "${OUTPUT_DIR}/README.md"
 
 # ---------------------------------------------------------------------------
+# Step 2c: Generate .env.template
+# ---------------------------------------------------------------------------
+echo "[2c/7] Generating .env.template..."
+cat > "${OUTPUT_DIR}/.env.template" << 'ENVTEMPLATE'
+# ============================================================
+# AlfredProd — Environment Configuration
+# Copy this file to .env and fill in the required values.
+# ============================================================
+
+# ----------------------------------------------------------
+# REQUIRED: API mode (must be true for production)
+# ----------------------------------------------------------
+USE_API=true
+
+# ----------------------------------------------------------
+# REQUIRED: API credentials
+# ----------------------------------------------------------
+API_BASE_URL=https://<host>
+API_TOKEN=<your-api-token>
+
+# ----------------------------------------------------------
+# REQUIRED: License file path
+# ----------------------------------------------------------
+ALFRED_LICENSE=./license/alfred_license.json
+
+# ----------------------------------------------------------
+# OPTIONAL: Logging
+# ----------------------------------------------------------
+# LOG_LEVEL=INFO
+
+# ----------------------------------------------------------
+# OPTIONAL: Request file (default: request.json)
+# ----------------------------------------------------------
+# REQUEST_PATH=./request.json
+
+# ----------------------------------------------------------
+# OPTIONAL: Solver timeouts (seconds)
+# ----------------------------------------------------------
+# ALFRED_SOLVER_TIMEOUT=600
+# ALFRED_PROBE_TIMEOUT=60
+ENVTEMPLATE
+
+# ---------------------------------------------------------------------------
 # Step 3: Copy serde.py → src/optimization/solver_serde.py
 # ---------------------------------------------------------------------------
 echo "[3/7] Installing serde module..."

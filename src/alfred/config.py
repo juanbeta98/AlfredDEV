@@ -116,6 +116,14 @@ class Config:
         """
         Validate critical configuration before execution.
         """
+        # PROD guard: LOCAL mode is not valid unless ALFRED_DEV_MODE is explicitly set
+        if not cls.USE_API and not os.getenv("ALFRED_DEV_MODE"):
+            raise RuntimeError(
+                "USE_API is not set to true. "
+                "AlfredProd requires API mode. "
+                "Copy .env.template to .env and configure USE_API=true."
+            )
+
         if cls.USE_API:
             if not cls.SERVICES_ENDPOINT:
                 raise RuntimeError("USE_API=true but SERVICES_ENDPOINT is not set")
