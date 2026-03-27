@@ -57,7 +57,11 @@ if [[ $# -lt 1 ]]; then
 
     # Collect builds sorted by modification time (newest first), excluding
     # internal dirs (_app_pre_install, _install_tmp)
-    mapfile -t BUILDS < <(
+    # (mapfile avoided for bash 3 / macOS system bash compatibility)
+    BUILDS=()
+    while IFS= read -r line; do
+        [[ -n "$line" ]] && BUILDS+=("$line")
+    done < <(
         find "${BUILDS_DIR}" -mindepth 1 -maxdepth 1 -type d \
             ! -name '_*' \
             -print0 \
@@ -140,17 +144,14 @@ mkdir -p "${TMP_EXTRACT}"
 echo "Extracting..."
 unzip -q "${ZIP}" -d "${TMP_EXTRACT}"
 
-# PROD zips extract as app/ (install.sh renames to release ID)
-# DEV zips extract as the release ID directly
-if [[ -d "${TMP_EXTRACT}/app" ]]; then
-    mv "${TMP_EXTRACT}/app" "${DEST}"
-elif [[ -d "${TMP_EXTRACT}/${RELEASE_ID}" ]]; then
-    mv "${TMP_EXTRACT}/${RELEASE_ID}" "${DEST}"
-else
-    echo "ERROR: zip does not contain app/ or ${RELEASE_ID}/ at its root." >&2
+# All zips extract as the release ID folder
+if [[ ! -d "${TMP_EXTRACT}/${RELEASE_ID}" ]]; then
+    echo "ERROR: zip does not contain ${RELEASE_ID}/ at its root." >&2
     rm -rf "${TMP_EXTRACT}"
     exit 1
 fi
+
+mv "${TMP_EXTRACT}/${RELEASE_ID}" "${DEST}"
 
 rm -rf "${TMP_EXTRACT}"
 
