@@ -91,20 +91,17 @@ echo "[1/6] Creating directory structure..."
 rm -rf "${OUTPUT_DIR}"
 mkdir -p \
     "${OUTPUT_DIR}/license" \
-    "${OUTPUT_DIR}/data/master" \
-    "${OUTPUT_DIR}/data/runs" \
+    "${OUTPUT_DIR}/runs" \
+    "${OUTPUT_DIR}/request" \
+    "${OUTPUT_DIR}/builds" \
     "${OUTPUT_DIR}/app"
 
 # ---------------------------------------------------------------------------
 # .env.template
 # ---------------------------------------------------------------------------
-echo "[2/6] Copying master data..."
-if [[ -d "${REPO_ROOT}/data/master" ]]; then
-    cp -r "${REPO_ROOT}/data/master/." "${OUTPUT_DIR}/data/master/"
-    echo "    Copied from ${REPO_ROOT}/data/master/"
-else
-    echo "    WARNING: ${REPO_ROOT}/data/master/ not found — copy it manually into data/master/"
-fi
+# Master data is baked into the Docker image via the app bundle (data/master/).
+# No copy needed in Layer 1 for Docker runs. If the customer runs natively,
+# they can find master data inside app/data/master/ after installing the bundle.
 
 echo "[3/6] Writing .env.template..."
 cat > "${OUTPUT_DIR}/.env.template" << 'ENVTEMPLATE'
@@ -130,7 +127,9 @@ API_TOKEN=<your-api-token>
 ALFRED_LICENSE=./license/alfred_license.json
 
 # ----------------------------------------------------------
-# REQUIRED: OSRM routing service (internal Docker service name)
+# REQUIRED: OSRM routing service URL
+#   Docker (docker-compose with osrm profile): http://osrm:5000/route/v1/driving/
+#   Native (OSRM running locally on port 5050): http://localhost:5050/route/v1/driving/
 # ----------------------------------------------------------
 OSRM_URL=http://osrm:5000/route/v1/driving/
 
@@ -166,8 +165,17 @@ fi
 cat > "${OUTPUT_DIR}/docker-compose.yml" << COMPOSE
 version: "3.9"
 
+# How to run:
+#   With OSRM (full stack):  docker-compose --profile osrm up -d osrm
+#                            docker-compose run --rm alfred
+#   Without OSRM:            docker-compose run --rm alfred
+#
+# Note: set OSRM_URL=http://osrm:5000/route/v1/driving/ in .env when using the
+#       osrm service. For native (non-Docker) runs use http://localhost:<port>/...
+
 services:
   osrm:
+    profiles: ["osrm"]
     image: ghcr.io/project-osrm/osrm-backend:v5.27.1
     container_name: alfred-osrm
     restart: unless-stopped
@@ -180,15 +188,12 @@ ${OSRM_VOLUME}
   alfred:
     build: ./app
     container_name: alfred-solver
-    restart: unless-stopped
-    depends_on:
-      - osrm
+    restart: "no"
     env_file:
       - .env
     volumes:
       - ./license:/app/license:ro
-      - ./data/master:/app/data/master:ro
-      - ./data/runs:/app/data/runs
+      - ./runs:/app/data/runs
       - ./request:/app/request
     networks:
       - alfred-net
@@ -225,6 +230,28 @@ App bundle updates (new app/ zips) do NOT require a new license.
 LICREADME
 
 # ---------------------------------------------------------------------------
+# alfred_cli.py launcher stub (Layer 1 entry point)
+# ---------------------------------------------------------------------------
+echo "[2b/6] Writing alfred_cli.py launcher stub..."
+cat > "${OUTPUT_DIR}/alfred_cli.py" << 'CLISTUB'
+#!/usr/bin/env python3
+"""ALFRED launcher — delegates to the current app bundle.
+
+Run from this directory:
+    python alfred_cli.py --request request/request.json
+"""
+import os
+import sys
+import subprocess
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.exit(subprocess.call(
+    [sys.executable, os.path.join(_HERE, "app", "alfred_cli.py")] + sys.argv[1:]
+))
+CLISTUB
+chmod +x "${OUTPUT_DIR}/alfred_cli.py"
+
+# ---------------------------------------------------------------------------
 # app/README.md placeholder
 # ---------------------------------------------------------------------------
 cat > "${OUTPUT_DIR}/app/README.md" << 'APPREADME'
@@ -250,13 +277,15 @@ cat > "${OUTPUT_DIR}/README.md" << SETUPREADME
 
 \`\`\`
 alfred/                        ← this directory (your permanent installation root)
+├── alfred_cli.py              ← run this to invoke Alfred
 ├── .env                       ← your credentials (copy from .env.template)
 ├── docker-compose.yml         ← orchestrates alfred + osrm
+├── install.sh                 ← run this to install/update the app bundle
 ├── license/
 │   └── alfred_license.json    ← your license file (provided by Alfred team)
-├── data/                      ← solver output (created automatically)
-├── app/                       ← app bundle (replaced on each update)
-└── request/                   ← place your request.json here
+├── runs/                      ← solver output artifacts (created automatically)
+├── request/                   ← place your request.json here
+└── app/  (or app -> builds/<id>/)  ← app bundle (managed by install.sh)
 \`\`\`
 
 ## First-time setup
@@ -278,41 +307,52 @@ alfred/                        ← this directory (your permanent installation r
 
 3. **Install the app bundle**
 
-   Unzip the app bundle (provided separately) into this directory:
+   Run the install script with the app bundle zip (provided separately):
 
    \`\`\`bash
-   unzip <RELEASE_ID>.zip -d .
-   # This creates/replaces the app/ directory
+   ./install.sh <RELEASE_ID>.zip
    \`\`\`
 
-4. **Start the services**
+4. **Build and run**
 
    \`\`\`bash
-   docker compose up --build -d
+   docker compose build alfred
+   docker compose run --rm alfred
    \`\`\`
 
 ## Updating the app
 
-When you receive a new app bundle zip, just replace \`app/\`:
+When you receive a new app bundle zip, just run:
 
 \`\`\`bash
-rm -rf app/
-unzip <NEW_RELEASE_ID>.zip -d .
-docker compose up --build -d
+./install.sh <NEW_RELEASE_ID>.zip
+docker compose build alfred
 \`\`\`
 
-Your \`.env\`, \`license/\`, and \`data/\` are never touched by updates.
+Previous builds are kept in \`builds/\` for rollback. Your \`.env\`, \`license/\`, and \`runs/\` are never touched by updates.
 
 ## Running a request
 
-Place your \`request.json\` in the \`request/\` directory, then:
+Place your \`request.json\` in the \`request/\` directory, then run:
+
+\`\`\`bash
+python alfred_cli.py --request request/request.json
+\`\`\`
+
+Or via Docker:
 
 \`\`\`bash
 docker compose run --rm alfred
 \`\`\`
 
-Results are written to \`data/\`.
+Results are written to \`runs/\`.
 SETUPREADME
+
+# ---------------------------------------------------------------------------
+# install.sh
+# ---------------------------------------------------------------------------
+cp "${SCRIPT_DIR}/install.sh.template" "${OUTPUT_DIR}/install.sh"
+chmod +x "${OUTPUT_DIR}/install.sh"
 
 # ---------------------------------------------------------------------------
 # Zip it
