@@ -1,0 +1,12 @@
+dist/
+experiments/
+builds/
+releases/
+.git/
+osrm_resources/
+data/runs/
+data/api_snapshots/
+__pycache__/
+*.pyc
+*.egg-info/
+.env

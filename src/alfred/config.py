@@ -4,12 +4,12 @@ from datetime import date, datetime
 from typing import Any, Dict, Optional
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from dotenv import load_dotenv
+from dotenv import load_dotenv, find_dotenv
 
 from alfred.utils.datetime_utils import utc_to_colombia_timestamp
 
-# Load .env file early
-load_dotenv()
+# Load .env — search from CWD upward so it works regardless of invocation directory
+load_dotenv(find_dotenv(usecwd=True))
 
 
 class Config:
@@ -116,6 +116,14 @@ class Config:
         """
         Validate critical configuration before execution.
         """
+        # PROD guard: LOCAL mode is not valid unless ALFRED_DEV_MODE is explicitly set
+        if not cls.USE_API and not os.getenv("ALFRED_DEV_MODE"):
+            raise RuntimeError(
+                "USE_API is not set to true. "
+                "AlfredProd requires API mode. "
+                "Copy .env.template to .env and configure USE_API=true."
+            )
+
         if cls.USE_API:
             if not cls.SERVICES_ENDPOINT:
                 raise RuntimeError("USE_API=true but SERVICES_ENDPOINT is not set")
