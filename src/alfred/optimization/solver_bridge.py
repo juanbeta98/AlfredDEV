@@ -216,13 +216,14 @@ class SolverBridge:
                 "Consider increasing ALFRED_SOLVER_TIMEOUT."
             )
 
-        # Forward stderr lines at error level (capped to avoid log flooding)
+        # Forward stderr lines — debug on success, error on failure
         if proc.stderr.strip():
             lines = proc.stderr.strip().splitlines()
+            log_fn = logger.debug if proc.returncode == 0 else logger.error
             for line in lines[:20]:
-                logger.error("solver_stderr | %s", line)
+                log_fn("solver_stderr | %s", line)
             if len(lines) > 20:
-                logger.error("solver_stderr | ... (%d more lines suppressed)", len(lines) - 20)
+                log_fn("solver_stderr | ... (%d more lines suppressed)", len(lines) - 20)
 
         if proc.returncode == 5:
             raise SolverBridgeError(

@@ -2,12 +2,12 @@ version: "3.9"
 
 services:
   osrm:
-    image: ghcr.io/project-osrm/osrm-backend:v5.28.0
+    image: ghcr.io/project-osrm/osrm-backend:v5.27.1
     container_name: osrm-colombia
     restart: unless-stopped
     volumes:
-      - ./osrm_resources/osrm_data:/data
-    command: osrm-routed --algorithm mld /data/colombia/colombia-latest.osrm
+      - ./osrm_resources/osrm_data/colombia:/data:ro
+    command: osrm-routed --algorithm mld /data/colombia-latest.osrm
     networks:
       - alfred-net
 
@@ -20,7 +20,8 @@ services:
       - .env.docker
     volumes:
       - ./request:/app/request
-      - ./output:/app/output
+      - ./output:/app/data/runs
+      - ./releases/licenses:/app/license:ro
     networks:
       - alfred-net
 

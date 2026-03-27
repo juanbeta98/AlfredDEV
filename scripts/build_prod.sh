@@ -1,17 +1,19 @@
 #!/usr/bin/env bash
 # =============================================================================
-# build_prod.sh — Generate the AlfredProd deliverable from AlfredDEV.
+# build_prod.sh — Generate the AlfredProd app bundle from AlfredDEV.
 #
 # Usage:
-#   ./scripts/build_prod.sh --type prod|dev [--output-dir <path>] [--binary <path>] [--skip-binary]
+#   ./scripts/build_prod.sh --type prod|dev [--output-dir <path>] [--binary <path>] [--binary-linux <path>] [--skip-binary]
 #
 # Options:
 #   --type prod|dev       Build type (required). Controls output subdirectory:
-#                           prod → builds/PROD/AlfredProd
-#                           dev  → builds/DEV/AlfredProd
+#                           prod → builds/PROD/app
+#                           dev  → builds/DEV/app
 #   --output-dir <path>   Override output directory (optional; used internally by deliver.sh).
-#   --binary <path>       Path to the alfred_solver binary to ship.
-#                         Default: dist/alfred_solver (built by PyInstaller here).
+#   --binary <path>       Path to the macOS ARM64 alfred_solver binary to ship.
+#                         Default: dist/alfred_solver_mac
+#   --binary-linux <path> Path to a Linux amd64 alfred_solver binary to ship.
+#                         Mutually exclusive with --binary.
 #   --skip-binary         Don't copy a binary (useful when building the binary separately).
 #   --help                Show this message.
 #
@@ -22,10 +24,12 @@
 #   4. Copies serde.py to src/optimization/solver_serde.py.
 #   5. Adds the alfred_solver binary to bin/.
 #   6. Creates a stub src/optimization/algorithms/__init__.py.
-#   7. Updates .gitignore to exclude bin/ from version control.
 #
-# After running, AlfredProd is a fully functional, self-contained repo.
-# The customer receives AlfredProd + the binary (separately or together).
+# Output:
+#   The app bundle — source + bridges + binary. No .env, no docker-compose,
+#   no license. Those live in the customer's Layer 1 installation root and
+#   are never overwritten by app updates.
+#   Use scripts/init_customer.sh (once per new customer) to produce Layer 1.
 #
 # Update procedure (when AlfredDEV changes):
 #   1. Make and test changes in AlfredDEV normally.
@@ -42,7 +46,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEV_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 BUILD_TYPE=""
 OUTPUT_DIR=""
-BINARY_PATH="${DEV_ROOT}/dist/alfred_solver"
+BINARY_PATH="${DEV_ROOT}/dist/alfred_solver_mac"
+BINARY_LINUX_PATH=""
+PLATFORM_LABEL="mac"
 SKIP_BINARY=false
 
 # ---------------------------------------------------------------------------
@@ -56,6 +62,8 @@ while [[ $# -gt 0 ]]; do
             OUTPUT_DIR="$2"; shift 2 ;;
         --binary)
             BINARY_PATH="$2"; shift 2 ;;
+        --binary-linux)
+            BINARY_LINUX_PATH="$2"; shift 2 ;;
         --skip-binary)
             SKIP_BINARY=true; shift ;;
         --help|-h)
@@ -75,8 +83,8 @@ if [[ -z "${OUTPUT_DIR}" ]]; then
         exit 1
     fi
     case "${BUILD_TYPE}" in
-        prod) OUTPUT_DIR="${DEV_ROOT}/builds/PROD/AlfredProd" ;;
-        dev)  OUTPUT_DIR="${DEV_ROOT}/builds/DEV/AlfredProd" ;;
+        prod) OUTPUT_DIR="${DEV_ROOT}/builds/PROD/app" ;;
+        dev)  OUTPUT_DIR="${DEV_ROOT}/builds/DEV/app" ;;
         *)    echo "ERROR: --type must be 'prod' or 'dev'" >&2; exit 1 ;;
     esac
 fi
@@ -89,34 +97,45 @@ echo "Source  : ${DEV_ROOT}"
 echo "Output  : ${OUTPUT_DIR}"
 
 if [[ "${SKIP_BINARY}" == false ]]; then
+    # Resolve which binary to use: --binary-linux takes precedence if set
+    if [[ -n "${BINARY_LINUX_PATH}" && "${BINARY_PATH}" != "${DEV_ROOT}/dist/alfred_solver_mac" ]]; then
+        echo "ERROR: --binary and --binary-linux are mutually exclusive" >&2
+        exit 1
+    fi
+    if [[ -n "${BINARY_LINUX_PATH}" ]]; then
+        BINARY_PATH="${BINARY_LINUX_PATH}"
+        PLATFORM_LABEL="linux"
+    fi
     if [[ ! -f "${BINARY_PATH}" ]]; then
         echo ""
         echo "ERROR: Binary not found at ${BINARY_PATH}"
-        echo "  Build it first:  cd ${DEV_ROOT} && pyinstaller alfred_solver.spec --distpath dist/"
+        echo "  Build it first:  ./scripts/build_binary.sh --platform ${PLATFORM_LABEL}"
         echo "  Or skip:         --skip-binary"
         exit 1
     fi
-    echo "Binary  : ${BINARY_PATH}"
+    echo "Binary  : ${BINARY_PATH} (${PLATFORM_LABEL})"
 fi
 echo ""
 
 # ---------------------------------------------------------------------------
 # Step 1: Clean and recreate output directory
 # ---------------------------------------------------------------------------
-echo "[1/7] Clearing output directory..."
+echo "[1/6] Clearing output directory..."
 if [[ -d "${OUTPUT_DIR}" ]]; then
     rm -rf "${OUTPUT_DIR}"
 fi
 mkdir -p "${OUTPUT_DIR}"
 
 # ---------------------------------------------------------------------------
-# Step 2: Copy AlfredDEV → AlfredProd, excluding hidden files
+# Step 2: Copy AlfredDEV → app bundle, excluding proprietary/infra files
 # ---------------------------------------------------------------------------
-echo "[2/7] Copying AlfredDEV to AlfredProd (excluding algorithm sources)..."
+echo "[2/6] Copying AlfredDEV to app bundle (excluding algorithm sources)..."
 
 rsync -a \
     --exclude=".git" \
     --exclude=".env" \
+    --exclude=".env.docker" \
+    --exclude=".env.template" \
     --exclude="LICENSE" \
     --exclude="license" \
     --exclude="__pycache__" \
@@ -140,6 +159,7 @@ rsync -a \
     --exclude="releases/" \
     --exclude="builds/" \
     --exclude="osrm_resources/" \
+    --exclude="osrm_resources.zip" \
     --exclude="output/" \
     --exclude="data/runs/" \
     --exclude="data/api_snapshots/" \
@@ -147,67 +167,22 @@ rsync -a \
     --exclude="data/examples/" \
     --exclude="request.json" \
     --exclude="request2.json" \
+    --exclude="request_avail.json" \
     --exclude="request/" \
     --exclude="validate_deployment.py" \
-    --exclude=".env.docker" \
-    --exclude="Dockerfile" \
     --exclude="docker-compose.yml" \
+    --exclude="res/" \
     "${DEV_ROOT}/" \
     "${OUTPUT_DIR}/"
 
-# ---------------------------------------------------------------------------
-# Step 2b: Install prod README (replaces the dev README copied by rsync)
-# ---------------------------------------------------------------------------
-echo "[2b/7] Installing prod README..."
+# Install prod README (replaces the dev README copied by rsync)
+echo "[2b/6] Installing prod README..."
 cp "${DEV_ROOT}/docs/README_PROD.md" "${OUTPUT_DIR}/README.md"
-
-# ---------------------------------------------------------------------------
-# Step 2c: Generate .env.template
-# ---------------------------------------------------------------------------
-echo "[2c/7] Generating .env.template..."
-cat > "${OUTPUT_DIR}/.env.template" << 'ENVTEMPLATE'
-# ============================================================
-# AlfredProd — Environment Configuration
-# Copy this file to .env and fill in the required values.
-# ============================================================
-
-# ----------------------------------------------------------
-# REQUIRED: API mode (must be true for production)
-# ----------------------------------------------------------
-USE_API=true
-
-# ----------------------------------------------------------
-# REQUIRED: API credentials
-# ----------------------------------------------------------
-API_BASE_URL=https://<host>
-API_TOKEN=<your-api-token>
-
-# ----------------------------------------------------------
-# REQUIRED: License file path
-# ----------------------------------------------------------
-ALFRED_LICENSE=./license/alfred_license.json
-
-# ----------------------------------------------------------
-# OPTIONAL: Logging
-# ----------------------------------------------------------
-# LOG_LEVEL=INFO
-
-# ----------------------------------------------------------
-# OPTIONAL: Request file (default: request.json)
-# ----------------------------------------------------------
-# REQUEST_PATH=./request.json
-
-# ----------------------------------------------------------
-# OPTIONAL: Solver timeouts (seconds)
-# ----------------------------------------------------------
-# ALFRED_SOLVER_TIMEOUT=600
-# ALFRED_PROBE_TIMEOUT=60
-ENVTEMPLATE
 
 # ---------------------------------------------------------------------------
 # Step 3: Copy serde.py → src/optimization/solver_serde.py
 # ---------------------------------------------------------------------------
-echo "[3/7] Installing serde module..."
+echo "[3/6] Installing serde module..."
 cp "${DEV_ROOT}/src/solver_executable/serde.py" \
    "${OUTPUT_DIR}/src/alfred/optimization/solver_serde.py"
 
@@ -219,31 +194,27 @@ fi
 # ---------------------------------------------------------------------------
 # Step 4: Copy solver_bridge.py → src/optimization/solver_bridge.py
 # ---------------------------------------------------------------------------
-echo "[4/7] Installing solver_bridge..."
+echo "[4/6] Installing solver_bridge..."
 cp "${DEV_ROOT}/src/alfred/optimization/solver_bridge.py" \
    "${OUTPUT_DIR}/src/alfred/optimization/solver_bridge.py"
 
 # ---------------------------------------------------------------------------
 # Step 5: Create stub algorithms package (preserves import structure)
 # ---------------------------------------------------------------------------
-echo "[5/7] Creating algorithms stub package..."
+echo "[5/6] Creating algorithms stub package..."
 mkdir -p "${OUTPUT_DIR}/src/alfred/optimization/algorithms"
 cat > "${OUTPUT_DIR}/src/alfred/optimization/algorithms/__init__.py" << 'STUB'
 # This package is intentionally empty in AlfredProd.
 # Algorithm logic is encapsulated in the alfred_solver binary.
 STUB
 
-# ---------------------------------------------------------------------------
-# Step 6: Install probe_bridge + patch feasibility_probe.py
-# ---------------------------------------------------------------------------
-echo "[6/7] Installing probe_bridge and patching feasibility_probe..."
+# Install probe_bridge + patch feasibility_probe.py
 cp "${DEV_ROOT}/src/alfred/availability/probe_bridge.py" \
    "${OUTPUT_DIR}/src/alfred/availability/probe_bridge.py"
 
 # Patch feasibility_probe.py: swap run_insertion_worker import
 PROBE_FILE="${OUTPUT_DIR}/src/alfred/availability/feasibility_probe.py"
 if [[ -f "${PROBE_FILE}" ]]; then
-    # Replace the two-line import block with the bridge import
     python3 - "${PROBE_FILE}" << 'PATCHSCRIPT'
 import sys, re
 
@@ -277,7 +248,7 @@ else
     exit 1
 fi
 
-# Also patch main.py: swap OptimizationSolver import
+# Patch orchestrator.py: swap OptimizationSolver import
 MAIN_FILE="${OUTPUT_DIR}/src/alfred/pipeline/orchestrator.py"
 if [[ -f "${MAIN_FILE}" ]]; then
     python3 - "${MAIN_FILE}" << 'PATCHSCRIPT'
@@ -299,21 +270,21 @@ open(path, "w").write(patched)
 print(f"  Patched: {path}")
 PATCHSCRIPT
 else
-    echo "ERROR: main.py not found at ${MAIN_FILE}" >&2
+    echo "ERROR: orchestrator.py not found at ${MAIN_FILE}" >&2
     echo "  This file should have been copied by rsync in step 2." >&2
     exit 1
 fi
 
 # ---------------------------------------------------------------------------
-# Step 7: Install binary + license placeholder
+# Step 6: Install binary
 # ---------------------------------------------------------------------------
 if [[ "${SKIP_BINARY}" == false ]]; then
-    echo "[7/7] Installing alfred_solver binary..."
+    echo "[6/6] Installing alfred_solver binary..."
     mkdir -p "${OUTPUT_DIR}/bin"
     cp "${BINARY_PATH}" "${OUTPUT_DIR}/bin/alfred_solver"
     chmod +x "${OUTPUT_DIR}/bin/alfred_solver"
 else
-    echo "[7/7] Skipping binary installation (--skip-binary)."
+    echo "[6/6] Skipping binary installation (--skip-binary)."
     mkdir -p "${OUTPUT_DIR}/bin"
     cat > "${OUTPUT_DIR}/bin/README.md" << 'BINREADME'
 # bin/
@@ -323,40 +294,16 @@ Place the `alfred_solver` binary here before running AlfredProd.
 The binary is built from AlfredDEV:
 
     cd <AlfredDEV>
-    pyinstaller alfred_solver.spec --distpath dist/
-    cp dist/alfred_solver <AlfredProd>/bin/alfred_solver
+    ./scripts/build_binary.sh --platform mac|linux
+    cp dist/alfred_solver_mac <AlfredProd>/bin/alfred_solver   # macOS ARM64
+    cp dist/alfred_solver_linux <AlfredProd>/bin/alfred_solver  # Linux amd64
     chmod +x <AlfredProd>/bin/alfred_solver
 
 The binary must match the OS/architecture of the machine running AlfredProd.
 BINREADME
 fi
 
-# Create license/ directory placeholder
-mkdir -p "${OUTPUT_DIR}/license"
-cat > "${OUTPUT_DIR}/license/README.md" << 'LICREADME'
-# license/
-
-Place the license file issued for this deployment here, e.g.:
-
-    license/alfred_license.json
-
-Then set the environment variable so the solver binary can find it:
-
-    export ALFRED_LICENSE=/path/to/AlfredProd/license/alfred_license.json
-
-Or add it to your .env file:
-
-    ALFRED_LICENSE=./license/alfred_license.json
-
-The binary verifies the license on every invocation. It will exit with code 5
-if the file is missing, tampered with, or expired.
-
-License files are issued by the AlfredDEV team. Contact them to obtain or
-renew a license. See license_tools/README.md in the AlfredDEV repo for
-the full operator guide.
-LICREADME
-
-# Update .gitignore: exclude bin/ and license/*.json (never commit binaries or license files)
+# Update .gitignore: exclude bin/ (never commit binaries)
 GITIGNORE="${OUTPUT_DIR}/.gitignore"
 _append_gitignore() {
     local pattern="$1"
@@ -370,14 +317,13 @@ _append_gitignore() {
     fi
 }
 _append_gitignore "bin/" "Compiled solver binary (install separately, do not commit)"
-_append_gitignore "license/*.json" "License files (customer-specific, do not commit)"
 
 # ---------------------------------------------------------------------------
 # Done
 # ---------------------------------------------------------------------------
 echo ""
 echo "=== Build complete ==="
-echo "AlfredProd is ready at: ${OUTPUT_DIR}"
+echo "App bundle ready at: ${OUTPUT_DIR}"
 echo ""
 echo "Quick sanity check:"
 echo "  cd ${OUTPUT_DIR}"
@@ -387,6 +333,6 @@ if [[ "${SKIP_BINARY}" == false ]]; then
     echo "  bin/alfred_solver --help"
 fi
 echo ""
-echo "Before running, set the license path:"
-echo "  export ALFRED_LICENSE=${OUTPUT_DIR}/license/alfred_license.json"
-echo "  (place the issued license file there first)"
+echo "NOTE: This is the app bundle only (Layer 2)."
+echo "  For a new customer, first run:  ./scripts/init_customer.sh --customer <name> --code <CODE>"
+echo "  Then deliver the app bundle:    ./scripts/deliver.sh --type prod ..."

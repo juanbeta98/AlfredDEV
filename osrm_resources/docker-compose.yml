@@ -1,0 +1,14 @@
+services:
+  osrm-colombia:
+    image: ghcr.io/project-osrm/osrm-backend:v5.27.1
+    container_name: osrm-colombia
+    command: >
+      osrm-routed
+      --algorithm mld
+      /data/colombia-latest.osrm
+    volumes:
+      - ./osrm_data/colombia:/data:ro
+    ports:
+      - "5050:5000"
+    restart: unless-stopped
+
