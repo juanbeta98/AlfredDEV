@@ -275,9 +275,9 @@ else
     bash "${SCRIPT_DIR}/build_prod.sh" "${BUILD_ARGS[@]}"
 
     echo "==> Creating zip → ${DEV_ZIP}"
-    mv "${BUILD_TMP}" "${TYPE_DIR}/app"
-    (cd "${TYPE_DIR}" && zip -r "${DEV_ZIP}" "app" -x "app/.git/*")
-    rm -rf "${TYPE_DIR}/app"
+    mv "${BUILD_TMP}" "${TYPE_DIR}/${RELEASE_ID}"
+    (cd "${TYPE_DIR}" && zip -r "${DEV_ZIP}" "${RELEASE_ID}" -x "${RELEASE_ID}/.git/*")
+    rm -rf "${TYPE_DIR}/${RELEASE_ID}"
 
     DEV_HASH=""
     if [[ $SKIP_BINARY -eq 0 ]]; then
