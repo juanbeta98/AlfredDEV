@@ -17,3 +17,10 @@ ipywidgets>=8.1,<9
 
 # --- Utilities ---
 tqdm>=4.67,<5
+
+# --- HTTP server ---
+fastapi>=0.115,<1
+uvicorn[standard]>=0.32,<1
+
+# --- License validation ---
+cryptography>=42,<46
