@@ -184,7 +184,7 @@ fi
 #   binary_path : path to the platform binary (ignored when SKIP_BINARY=1)
 #   zip_path    : destination zip file (e.g. builds/PROD/R2_CLIENTE_mac.zip)
 #
-# Always extracts as "app/" on the customer side.
+# Extracts as "<release_id>_<platform>/" on the customer side.
 # Prints the zip path on stdout.
 # ---------------------------------------------------------------------------
 _build_platform_zip() {
@@ -197,7 +197,7 @@ _build_platform_zip() {
     echo "==> [${PLATFORM}] Building app bundle..."
     rm -rf "${BUILD_TMP}"
 
-    local BUILD_ARGS=("--output-dir" "${BUILD_TMP}")
+    local BUILD_ARGS=("--type" "${BUILD_TYPE}" "--output-dir" "${BUILD_TMP}")
     if [[ $SKIP_BINARY -eq 1 ]]; then
         BUILD_ARGS+=("--skip-binary")
     elif [[ "${PLATFORM}" == "linux" ]]; then
@@ -208,11 +208,12 @@ _build_platform_zip() {
 
     bash "${SCRIPT_DIR}/build_prod.sh" "${BUILD_ARGS[@]}"
 
-    # Zip extracts as "app/" on the customer side
+    # Zip extracts as the release ID folder on the customer side
+    local RELEASE_FOLDER="${RELEASE_ID}_${PLATFORM}"
     echo "==> [${PLATFORM}] Creating zip → ${ZIP_PATH}"
-    mv "${BUILD_TMP}" "${TYPE_DIR}/app"
-    (cd "${TYPE_DIR}" && zip -r "${ZIP_PATH}" "app" -x "app/.git/*")
-    rm -rf "${TYPE_DIR}/app"
+    mv "${BUILD_TMP}" "${TYPE_DIR}/${RELEASE_FOLDER}"
+    (cd "${TYPE_DIR}" && zip -r "${ZIP_PATH}" "${RELEASE_FOLDER}" -x "${RELEASE_FOLDER}/.git/*")
+    rm -rf "${TYPE_DIR}/${RELEASE_FOLDER}"
 }
 
 # ---------------------------------------------------------------------------
@@ -266,7 +267,7 @@ else
     echo "==> Building app bundle..."
     rm -rf "${BUILD_TMP}"
 
-    BUILD_ARGS=("--output-dir" "${BUILD_TMP}")
+    BUILD_ARGS=("--type" "${BUILD_TYPE}" "--output-dir" "${BUILD_TMP}")
     if [[ $SKIP_BINARY -eq 1 ]]; then
         BUILD_ARGS+=("--skip-binary")
     else
@@ -275,9 +276,9 @@ else
     bash "${SCRIPT_DIR}/build_prod.sh" "${BUILD_ARGS[@]}"
 
     echo "==> Creating zip → ${DEV_ZIP}"
-    mv "${BUILD_TMP}" "${TYPE_DIR}/app"
-    (cd "${TYPE_DIR}" && zip -r "${DEV_ZIP}" "app" -x "app/.git/*")
-    rm -rf "${TYPE_DIR}/app"
+    mv "${BUILD_TMP}" "${TYPE_DIR}/${RELEASE_ID}"
+    (cd "${TYPE_DIR}" && zip -r "${DEV_ZIP}" "${RELEASE_ID}" -x "${RELEASE_ID}/.git/*")
+    rm -rf "${TYPE_DIR}/${RELEASE_ID}"
 
     DEV_HASH=""
     if [[ $SKIP_BINARY -eq 0 ]]; then

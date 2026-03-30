@@ -1,0 +1,158 @@
+#!/usr/bin/env bash
+# =============================================================================
+# install.sh — Install or update an Alfred app bundle.
+#
+# Usage:
+#   ./install.sh                   — list available builds and select one
+#   ./install.sh <path-to-zip>     — install from a zip file
+#
+# What it does:
+#   1. Extracts the zip into builds/<release_id>/  (if a zip is given)
+#      OR activates an existing build from builds/  (interactive mode)
+#   2. Updates the app symlink to point to the selected build
+#
+# To rebuild the Docker image after installing:
+#   docker compose build alfred
+# =============================================================================
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "${SCRIPT_DIR}"
+
+BUILDS_DIR="${SCRIPT_DIR}/builds"
+
+# ---------------------------------------------------------------------------
+# Helper: activate a build (update app/ symlink)
+# ---------------------------------------------------------------------------
+_activate() {
+    local RELEASE_ID="$1"
+    local DEST="${BUILDS_DIR}/${RELEASE_ID}"
+
+    # If app/ is currently a real directory (e.g. from a manual unzip), back it up
+    if [[ -d "${SCRIPT_DIR}/app" && ! -L "${SCRIPT_DIR}/app" ]]; then
+        echo "NOTE: app/ is a real directory — backing up to builds/_app_pre_install"
+        mv "${SCRIPT_DIR}/app" "${BUILDS_DIR}/_app_pre_install"
+    fi
+    rm -f "${SCRIPT_DIR}/app"
+    ln -s "builds/${RELEASE_ID}" "${SCRIPT_DIR}/app"
+
+    echo ""
+    echo "Active    : ${DEST}"
+    echo "app/      → builds/${RELEASE_ID}"
+    echo ""
+    echo "To rebuild and run:"
+    echo "  docker compose build alfred"
+    echo "  docker compose run --rm alfred"
+    echo ""
+    echo "Or run natively:"
+    echo "  python alfred_cli.py --request request/request.json"
+}
+
+# ---------------------------------------------------------------------------
+# Interactive mode: no argument given — list builds and let user pick
+# ---------------------------------------------------------------------------
+if [[ $# -lt 1 ]]; then
+    mkdir -p "${BUILDS_DIR}"
+
+    # Collect builds sorted by modification time (newest first), excluding
+    # internal dirs (_app_pre_install, _install_tmp)
+    # (mapfile avoided for bash 3 / macOS system bash compatibility)
+    BUILDS=()
+    while IFS= read -r line; do
+        [[ -n "$line" ]] && BUILDS+=("$line")
+    done < <(
+        find "${BUILDS_DIR}" -mindepth 1 -maxdepth 1 -type d \
+            ! -name '_*' \
+            -print0 \
+        | xargs -0 ls -dt 2>/dev/null \
+        | xargs -I{} basename {}
+    )
+
+    if [[ ${#BUILDS[@]} -eq 0 ]]; then
+        echo "No builds found in builds/. Install a zip first:" >&2
+        echo "  ./install.sh <path-to-zip>" >&2
+        exit 1
+    fi
+
+    # Determine currently active build (symlink target)
+    CURRENT=""
+    if [[ -L "${SCRIPT_DIR}/app" ]]; then
+        CURRENT="$(basename "$(readlink "${SCRIPT_DIR}/app")")"
+    fi
+
+    echo "=== Alfred — Available Builds ==="
+    echo ""
+    for i in "${!BUILDS[@]}"; do
+        LABEL=""
+        if [[ "${BUILDS[$i]}" == "${CURRENT}" ]]; then
+            LABEL=" (active)"
+        fi
+        printf "  %d. %s%s\n" "$((i+1))" "${BUILDS[$i]}" "${LABEL}"
+    done
+    echo ""
+
+    # Prompt
+    while true; do
+        read -rp "Select build [1-${#BUILDS[@]}]: " CHOICE
+        if [[ "${CHOICE}" =~ ^[0-9]+$ ]] && \
+           [[ "${CHOICE}" -ge 1 ]] && \
+           [[ "${CHOICE}" -le ${#BUILDS[@]} ]]; then
+            break
+        fi
+        echo "  Invalid choice — enter a number between 1 and ${#BUILDS[@]}."
+    done
+
+    SELECTED="${BUILDS[$((CHOICE-1))]}"
+    echo ""
+    echo "=== Alfred install ==="
+    echo "Release ID : ${SELECTED}"
+
+    _activate "${SELECTED}"
+    exit 0
+fi
+
+# ---------------------------------------------------------------------------
+# Zip install mode: argument given — extract and activate
+# ---------------------------------------------------------------------------
+ZIP="$(realpath "$1")"
+
+if [[ ! -f "${ZIP}" ]]; then
+    echo "ERROR: zip file not found: ${ZIP}" >&2
+    exit 1
+fi
+
+RELEASE_ID="$(basename "${ZIP}" .zip)"
+
+echo "=== Alfred install ==="
+echo "Zip        : ${ZIP}"
+echo "Release ID : ${RELEASE_ID}"
+
+DEST="${BUILDS_DIR}/${RELEASE_ID}"
+
+if [[ -d "${DEST}" ]]; then
+    echo "WARNING: ${DEST} already exists — overwriting."
+    rm -rf "${DEST}"
+fi
+
+mkdir -p "${BUILDS_DIR}"
+
+TMP_EXTRACT="${BUILDS_DIR}/_install_tmp"
+rm -rf "${TMP_EXTRACT}"
+mkdir -p "${TMP_EXTRACT}"
+
+echo "Extracting..."
+unzip -q "${ZIP}" -d "${TMP_EXTRACT}"
+
+# All zips extract as the release ID folder
+if [[ ! -d "${TMP_EXTRACT}/${RELEASE_ID}" ]]; then
+    echo "ERROR: zip does not contain ${RELEASE_ID}/ at its root." >&2
+    rm -rf "${TMP_EXTRACT}"
+    exit 1
+fi
+
+mv "${TMP_EXTRACT}/${RELEASE_ID}" "${DEST}"
+
+rm -rf "${TMP_EXTRACT}"
+
+_activate "${RELEASE_ID}"

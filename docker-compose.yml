@@ -1,7 +1,15 @@
 version: "3.9"
 
+# DEV compose file — runs Alfred from the repo root using .env.docker
+#
+# How to run:
+#   With OSRM:    docker-compose --profile osrm up -d osrm
+#                 docker-compose run --rm alfred
+#   Without OSRM: docker-compose run --rm alfred
+
 services:
   osrm:
+    profiles: ["osrm"]
     image: ghcr.io/project-osrm/osrm-backend:v5.27.1
     container_name: osrm-colombia
     restart: unless-stopped
@@ -14,8 +22,7 @@ services:
   alfred:
     build: .
     container_name: alfred-solver
-    depends_on:
-      - osrm
+    restart: "no"
     env_file:
       - .env.docker
     volumes:

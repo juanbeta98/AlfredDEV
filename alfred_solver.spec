@@ -76,6 +76,7 @@ hidden = [
     # License check module
     "solver_executable.license_check",
     "cryptography",
+    "cryptography.hazmat.bindings._rust",
     "cryptography.hazmat.primitives.asymmetric.ed25519",
     "cryptography.hazmat.primitives.serialization",
 
