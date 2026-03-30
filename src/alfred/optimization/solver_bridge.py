@@ -179,27 +179,30 @@ class SolverBridge:
         )
         log_file = tmpdir / "solver.log"
 
+        dev_mode = os.environ.get("ALFRED_DEV_MODE", "").strip() not in ("", "0")
         license = _license_path()
-        if not license:
-            raise SolverBridgeError(
-                "No license file provided. Set the ALFRED_LICENSE environment variable "
-                "to the path of the license file issued for this deployment."
-            )
-        if not Path(license).exists():
-            raise SolverBridgeError(
-                f"License file not found: {license}. "
-                "Place the issued license file at this path before running."
-            )
+        if not dev_mode:
+            if not license:
+                raise SolverBridgeError(
+                    "No license file provided. Set the ALFRED_LICENSE environment variable "
+                    "to the path of the license file issued for this deployment."
+                )
+            if not Path(license).exists():
+                raise SolverBridgeError(
+                    f"License file not found: {license}. "
+                    "Place the issued license file at this path before running."
+                )
 
         cmd = [
             str(solver_bin),
             "--mode", "solve",
             str(input_json),
             str(tmpdir),
-            "--license", license,
             "--log-file", str(log_file),
             "--log-level", "INFO",
         ]
+        if license:
+            cmd += ["--license", license]
 
         logger.info("solver_bridge: launching %s", " ".join(cmd[:4]))
 

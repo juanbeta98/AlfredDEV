@@ -8,3 +8,7 @@ class ScheduleLoadError(AvailabilityError):
 
 class InvalidServiceRequestError(AvailabilityError):
     """Raised when the ServiceRequest is structurally invalid."""
+
+
+class LicenseError(AvailabilityError):
+    """Raised when ALFRED_LICENSE env var is missing or the file does not exist."""

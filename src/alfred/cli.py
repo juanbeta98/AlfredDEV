@@ -57,6 +57,7 @@ def main() -> None:
         sys.exit(1)
 
     if action == "generate_assignment":
+        os.environ["REQUEST_PATH"] = request_path
         from alfred.pipeline.orchestrator import main as run_assignment
         sys.exit(run_assignment())
 

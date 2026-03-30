@@ -4,12 +4,21 @@ from datetime import date, datetime
 from typing import Any, Dict, Optional
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from pathlib import Path
+
 from dotenv import load_dotenv, find_dotenv
 
 from alfred.utils.datetime_utils import utc_to_colombia_timestamp
 
 # Load .env — search from CWD upward so it works regardless of invocation directory
-load_dotenv(find_dotenv(usecwd=True))
+_dotenv_path = find_dotenv(usecwd=True)
+load_dotenv(_dotenv_path)
+
+# Resolve ALFRED_LICENSE relative to the .env file so relative paths like
+# ./license/alfred_license.json work regardless of the caller's CWD.
+_license_raw = os.environ.get("ALFRED_LICENSE", "")
+if _license_raw and not Path(_license_raw).is_absolute() and _dotenv_path:
+    os.environ["ALFRED_LICENSE"] = str((Path(_dotenv_path).parent / _license_raw).resolve())
 
 
 class Config:
@@ -87,6 +96,7 @@ class Config:
         os.getenv("WRITE_MODEL_SOLUTION", "false").lower() == "true"
     )
     RUNS_DIR: str = os.getenv("RUNS_DIR", "./data/runs")
+    MASTER_DATA_DIR: str = os.getenv("MASTER_DATA_DIR", "data/master")
     ARTIFACT_TIMEZONE: str = os.getenv("ARTIFACT_TIMEZONE", "America/Bogota")
 
     # --------------------------------------------------

@@ -98,16 +98,32 @@ error — unrecoverable failure:
 import argparse
 import json
 import logging
+import os
 import sys
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, Optional
 
 from alfred.config import Config
 from alfred.availability import check_availability
+from alfred.availability.exceptions import LicenseError
 from alfred.availability.models import AvailabilityResponse, LaborRequest, ServiceRequest
 from alfred.availability.request_parser import parse_api_request
 
 logger = logging.getLogger(__name__)
+
+
+def _validate_license() -> None:
+    dev_mode = os.environ.get("ALFRED_DEV_MODE", "").strip() not in ("", "0")
+    if dev_mode:
+        return
+    license_path = os.environ.get("ALFRED_LICENSE")
+    if not license_path:
+        raise LicenseError(
+            "No license file provided. Set ALFRED_LICENSE to the path of the issued license file."
+        )
+    if not Path(license_path).exists():
+        raise LicenseError(f"License file not found: {license_path}")
 
 
 def run(data: Dict[str, Any]) -> Dict[str, Any]:
@@ -119,6 +135,7 @@ def run(data: Dict[str, Any]) -> Dict[str, Any]:
     """
     Config.validate()
     Config.configure_logging()
+    _validate_license()
 
     department = data.get("department_name") or data.get("department_code") or None
 
@@ -214,6 +231,14 @@ def _serialize_response(response: AvailabilityResponse, department: Optional[str
         }}
 
     if not response.feasible_slots:
+        reason = response.desired_slot_result.reason
+        if reason == "pico_y_placa":
+            return {"data": {
+                "result": "pico_y_placa",
+                "message": "Vehículo restringido por pico y placa para esta fecha",
+                "department": department,
+                "requested_schedule": requested,
+            }}
         return {"data": {
             "result": "occupied",
             "message": "No hay disponibilidad para este día, seleccione otra fecha",
