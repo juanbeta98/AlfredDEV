@@ -74,6 +74,7 @@ def probe_slot(
     slot_time: datetime,
     request: ServiceRequest,
     state: ScheduleState,
+    dist_dict: Optional[Dict[Any, Any]] = None,
 ) -> TimeSlotResult:
     """
     Test whether the candidate service can be inserted at slot_time.
@@ -111,7 +112,8 @@ def probe_slot(
         workday_end_str=model_params.workday_end_str,
         tzinfo=COLOMBIA_TZ,
     )
-    dist_dict = _city_dist_slice(state.master_data.dist_dict, city_key)
+    if dist_dict is None:
+        dist_dict = _city_dist_slice(state.master_data.dist_dict, city_key)
 
     duraciones = (
         state.master_data.duraciones_df

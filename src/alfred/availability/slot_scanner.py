@@ -9,19 +9,21 @@ Implements the two-phase availability check:
 
 import logging
 import math
+import os
 from datetime import datetime, timedelta
-from typing import List
+from typing import Dict, List, Optional
 from zoneinfo import ZoneInfo
 
 import pandas as pd
 
-from alfred.availability.feasibility_probe import probe_slot
+from alfred.availability.feasibility_probe import _city_dist_slice, probe_slot
 from alfred.availability.models import (
     AvailabilityResponse,
     ScheduleState,
     ServiceRequest,
     TimeSlotResult,
 )
+from alfred.optimization.common.distance_utils import batch_distance_matrix
 from alfred.optimization.common.utils import compute_workday_end
 
 logger = logging.getLogger(__name__)
@@ -86,8 +88,52 @@ def scan_availability(
         tzinfo=COLOMBIA_TZ,
     )
 
+    # --- OSRM batch pre-computation (mirrors OFFLINE algorithm pattern) ---
+    # Build the full distance matrix once so all slot probes start with a warm
+    # cache and make zero individual OSRM HTTP calls.
+    _precomputed_dist_dict: Optional[Dict] = None
+    if state.settings.distance_method == "osrm":
+        _osrm_url = os.environ.get("OSRM_URL", "")
+        if _osrm_url:
+            city_key = state.department_code
+            _driver_positions = [
+                f"POINT ({row.longitud} {row.latitud})"
+                for _, row in state.master_data.directorio_df.iterrows()
+            ]
+            _base_starts = (
+                state.base_labors_df["map_start_point"].dropna().unique().tolist()
+                if not state.base_labors_df.empty and "map_start_point" in state.base_labors_df.columns
+                else []
+            )
+            _base_ends = (
+                state.base_labors_df["map_end_point"].dropna().unique().tolist()
+                if not state.base_labors_df.empty and "map_end_point" in state.base_labors_df.columns
+                else []
+            )
+            _req_starts = [lb.map_start_point for lb in request.labors if lb.map_start_point]
+            _req_ends   = [lb.map_end_point   for lb in request.labors if lb.map_end_point]
+            _all_points = list(dict.fromkeys(
+                _driver_positions + _base_starts + _base_ends + _req_starts + _req_ends
+            ))
+            _precomp_dist, _ = batch_distance_matrix(
+                _all_points, _all_points, _osrm_url,
+                include_times=(state.settings.time_method == "osrm_times"),
+            )
+            if _precomp_dist:
+                _city_cache = _city_dist_slice(state.master_data.dist_dict, city_key)
+                _precomputed_dist_dict = {**_precomp_dist, **_city_cache}
+                logger.info(
+                    "availability_osrm_precompute city=%s unique_points=%d pairs=%d",
+                    city_key, len(_all_points), len(_precomp_dist),
+                )
+            else:
+                logger.warning(
+                    "availability_osrm_precompute_failed city=%s — probes will use per-call fallback",
+                    city_key,
+                )
+
     # Phase 1: check desired slot
-    desired_result = probe_slot(request.desired_slot, request, state)
+    desired_result = probe_slot(request.desired_slot, request, state, dist_dict=_precomputed_dist_dict)
 
     if desired_result.feasible:
         logger.info(
@@ -114,7 +160,7 @@ def scan_availability(
 
     feasible_slots: List[TimeSlotResult] = []
     for slot in slots:
-        result = probe_slot(slot, request, state)
+        result = probe_slot(slot, request, state, dist_dict=_precomputed_dist_dict)
         if result.feasible:
             feasible_slots.append(result)
 
