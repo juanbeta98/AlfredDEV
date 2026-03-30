@@ -9,9 +9,9 @@
 # Options:
 #   --customer      Customer name (used in README)          (required)
 #   --code          Short uppercase code, e.g. CLIENTE      (required)
-#   --osrm-data     Path to OSRM data directory to include  (optional)
-#                   If provided, the docker-compose will reference it.
-#                   Default: customer must supply OSRM data separately.
+#   --osrm-data     Path to pre-processed OSRM data dir     (optional)
+#                   The directory is copied into the env as osrm_data/.
+#                   Default: osrm_resources/osrm_data/colombia (repo default)
 #   --output-dir    Override output directory               (optional)
 #                   Default: releases/envs/<CODE>_env/
 #   --help          Show this message.
@@ -22,6 +22,7 @@
 #     <CODE>_env/
 #     ├── .env.template        ← customer renames to .env and fills in values
 #     ├── docker-compose.yml   ← orchestrates alfred + osrm services
+#     ├── osrm_data/           ← pre-processed Colombia routing data (bundled)
 #     ├── license/
 #     │   └── README.md        ← instructions for placing alfred_license.json
 #     ├── data/                ← output directory (created empty)
@@ -43,7 +44,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 # ---------------------------------------------------------------------------
 CUSTOMER=""
 CODE=""
-OSRM_DATA=""
+OSRM_DATA="${REPO_ROOT}/osrm_resources/osrm_data/colombia"
 OUTPUT_DIR=""
 
 # ---------------------------------------------------------------------------
@@ -97,6 +98,17 @@ mkdir -p \
     "${OUTPUT_DIR}/app"
 
 # ---------------------------------------------------------------------------
+# OSRM data
+# ---------------------------------------------------------------------------
+echo "[2/6] Copying OSRM data from ${OSRM_DATA}..."
+if [[ ! -d "${OSRM_DATA}" ]]; then
+    echo "ERROR: OSRM data directory not found: ${OSRM_DATA}" >&2
+    echo "  Provide a valid path with --osrm-data <path>" >&2
+    exit 1
+fi
+cp -r "${OSRM_DATA}" "${OUTPUT_DIR}/osrm_data"
+
+# ---------------------------------------------------------------------------
 # .env.template
 # ---------------------------------------------------------------------------
 # Master data is baked into the Docker image via the app bundle (data/master/).
@@ -143,24 +155,12 @@ OSRM_URL=http://osrm:5000/route/v1/driving/
 # ----------------------------------------------------------
 # ALFRED_SOLVER_TIMEOUT=600
 # ALFRED_PROBE_TIMEOUT=60
-
-# ----------------------------------------------------------
-# DEV ONLY: Disable license validation (never set in production)
-# ----------------------------------------------------------
-# ALFRED_DEV_MODE=1
 ENVTEMPLATE
 
 # ---------------------------------------------------------------------------
 # docker-compose.yml (Layer 1 — orchestrates alfred + osrm)
 # ---------------------------------------------------------------------------
 echo "[4/6] Writing docker-compose.yml..."
-
-# Determine OSRM data volume line
-if [[ -n "${OSRM_DATA}" ]]; then
-    OSRM_VOLUME="      - ${OSRM_DATA}:/data:ro"
-else
-    OSRM_VOLUME="      - ./osrm_data:/data:ro  # Mount your OSRM data here"
-fi
 
 cat > "${OUTPUT_DIR}/docker-compose.yml" << COMPOSE
 version: "3.9"
@@ -180,17 +180,20 @@ services:
     container_name: alfred-osrm
     restart: unless-stopped
     volumes:
-${OSRM_VOLUME}
+      - ./osrm_data:/data:ro
     command: osrm-routed --algorithm mld /data/colombia-latest.osrm
     networks:
       - alfred-net
 
   alfred:
     build: ./app
+    platform: linux/amd64
     container_name: alfred-solver
-    restart: "no"
+    restart: unless-stopped
     env_file:
       - .env
+    ports:
+      - "8000:8000"
     volumes:
       - ./license:/app/license:ro
       - ./runs:/app/data/runs

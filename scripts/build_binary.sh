@@ -94,6 +94,7 @@ _build_linux() {
 
     echo "==> Building Docker image (platform: linux/amd64)..."
     docker build \
+        --no-cache \
         --platform linux/amd64 \
         -f "${REPO_ROOT}/Dockerfile.builder" \
         -t "${IMAGE_TAG}" \

@@ -197,7 +197,7 @@ _build_platform_zip() {
     echo "==> [${PLATFORM}] Building app bundle..."
     rm -rf "${BUILD_TMP}"
 
-    local BUILD_ARGS=("--output-dir" "${BUILD_TMP}")
+    local BUILD_ARGS=("--type" "${BUILD_TYPE}" "--output-dir" "${BUILD_TMP}")
     if [[ $SKIP_BINARY -eq 1 ]]; then
         BUILD_ARGS+=("--skip-binary")
     elif [[ "${PLATFORM}" == "linux" ]]; then
@@ -267,7 +267,7 @@ else
     echo "==> Building app bundle..."
     rm -rf "${BUILD_TMP}"
 
-    BUILD_ARGS=("--output-dir" "${BUILD_TMP}")
+    BUILD_ARGS=("--type" "${BUILD_TYPE}" "--output-dir" "${BUILD_TMP}")
     if [[ $SKIP_BINARY -eq 1 ]]; then
         BUILD_ARGS+=("--skip-binary")
     else

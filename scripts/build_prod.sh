@@ -228,8 +228,10 @@ old = (
     ")"
 )
 new = (
-    "from alfred.availability.probe_bridge import run_insertion_worker_bridge as run_insertion_worker\n"
-    "from alfred.optimization.algorithms.insert.insert_algorithms import get_drivers"
+    "from alfred.availability.probe_bridge import (\n"
+    "    run_insertion_worker_bridge as run_insertion_worker,\n"
+    "    get_drivers,\n"
+    ")"
 )
 
 if old not in text:
@@ -244,6 +246,33 @@ print(f"  Patched: {path}")
 PATCHSCRIPT
 else
     echo "ERROR: feasibility_probe.py not found at ${PROBE_FILE}" >&2
+    echo "  This file should have been copied by rsync in step 2." >&2
+    exit 1
+fi
+
+# Patch preassigned.py: swap offline_algorithms import to probe_bridge
+PREASSIGNED_FILE="${OUTPUT_DIR}/src/alfred/optimization/common/preassigned.py"
+if [[ -f "${PREASSIGNED_FILE}" ]]; then
+    python3 - "${PREASSIGNED_FILE}" << 'PATCHSCRIPT'
+import sys
+
+path = sys.argv[1]
+text = open(path).read()
+
+old = "from alfred.optimization.algorithms.offline.offline_algorithms import assign_task_to_driver, init_drivers"
+new = "from alfred.availability.probe_bridge import assign_task_to_driver, init_drivers"
+
+if old not in text:
+    print(f"ERROR: expected import not found in {path}", file=sys.stderr)
+    print(f"  Expected: {old!r}", file=sys.stderr)
+    sys.exit(1)
+
+patched = text.replace(old, new, 1)
+open(path, "w").write(patched)
+print(f"  Patched: {path}")
+PATCHSCRIPT
+else
+    echo "ERROR: preassigned.py not found at ${PREASSIGNED_FILE}" >&2
     echo "  This file should have been copied by rsync in step 2." >&2
     exit 1
 fi
@@ -274,6 +303,48 @@ else
     echo "  This file should have been copied by rsync in step 2." >&2
     exit 1
 fi
+
+# Patch pipeline entry points: harden _validate_license() — PROD only.
+# Remove the ALFRED_DEV_MODE early-return so license check is unconditional in PROD.
+if [[ "${BUILD_TYPE}" != "prod" ]]; then
+    echo "  Skipping _validate_license hardening (dev build)."
+else
+for PIPELINE_FILE in \
+    "${OUTPUT_DIR}/src/alfred/pipeline/check_availability.py" \
+    "${OUTPUT_DIR}/src/alfred/pipeline/orchestrator.py"; do
+    if [[ -f "${PIPELINE_FILE}" ]]; then
+        python3 - "${PIPELINE_FILE}" << 'PATCHSCRIPT'
+import sys
+
+path = sys.argv[1]
+text = open(path).read()
+
+old = (
+    "def _validate_license() -> None:\n"
+    "    dev_mode = os.environ.get(\"ALFRED_DEV_MODE\", \"\").strip() not in (\"\", \"0\")\n"
+    "    if dev_mode:\n"
+    "        return\n"
+    "    license_path = os.environ.get(\"ALFRED_LICENSE\")\n"
+)
+new = (
+    "def _validate_license() -> None:\n"
+    "    license_path = os.environ.get(\"ALFRED_LICENSE\")\n"
+)
+
+if old not in text:
+    print(f"ERROR: expected _validate_license pattern not found in {path}", file=sys.stderr)
+    sys.exit(1)
+
+patched = text.replace(old, new, 1)
+open(path, "w").write(patched)
+print(f"  Patched: {path}")
+PATCHSCRIPT
+    else
+        echo "ERROR: ${PIPELINE_FILE} not found" >&2
+        exit 1
+    fi
+done
+fi  # end BUILD_TYPE == prod
 
 # ---------------------------------------------------------------------------
 # Step 6: Install binary
@@ -317,6 +388,17 @@ _append_gitignore() {
     fi
 }
 _append_gitignore "bin/" "Compiled solver binary (install separately, do not commit)"
+
+# ---------------------------------------------------------------------------
+# Step 7 (dev only): seed repo-root bin/ so `docker compose build alfred` works
+# ---------------------------------------------------------------------------
+if [[ "${BUILD_TYPE}" == "dev" && "${SKIP_BINARY}" == false ]]; then
+    echo "[7] Seeding repo-root bin/ for Docker builds..."
+    mkdir -p "${DEV_ROOT}/bin"
+    cp "${BINARY_PATH}" "${DEV_ROOT}/bin/alfred_solver"
+    chmod +x "${DEV_ROOT}/bin/alfred_solver"
+    echo "  Seeded: ${DEV_ROOT}/bin/alfred_solver"
+fi
 
 # ---------------------------------------------------------------------------
 # Done
