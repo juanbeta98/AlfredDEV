@@ -157,17 +157,19 @@ def _run_probe(tmpdir: Path, **kwargs) -> Dict[str, Any]:
             "Set ALFRED_SOLVER_BIN or install the binary to bin/alfred_solver."
         )
 
+    dev_mode = os.environ.get("ALFRED_DEV_MODE", "").strip() not in ("", "0")
     license = _license_path()
-    if not license:
-        raise ProbeBridgeError(
-            "No license file provided. Set the ALFRED_LICENSE environment variable "
-            "to the path of the license file issued for this deployment."
-        )
-    if not Path(license).exists():
-        raise ProbeBridgeError(
-            f"License file not found: {license}. "
-            "Place the issued license file at this path before running."
-        )
+    if not dev_mode:
+        if not license:
+            raise ProbeBridgeError(
+                "No license file provided. Set the ALFRED_LICENSE environment variable "
+                "to the path of the license file issued for this deployment."
+            )
+        if not Path(license).exists():
+            raise ProbeBridgeError(
+                f"License file not found: {license}. "
+                "Place the issued license file at this path before running."
+            )
 
     input_json = serialize_probe_input(tmpdir, **kwargs)
     log_file = tmpdir / "probe.log"
@@ -177,10 +179,11 @@ def _run_probe(tmpdir: Path, **kwargs) -> Dict[str, Any]:
         "--mode", "probe",
         str(input_json),
         str(tmpdir),
-        "--license", license,
         "--log-file", str(log_file),
         "--log-level", "WARNING",   # probes are noisy; only log warnings+
     ]
+    if license:
+        cmd += ["--license", license]
 
     logger.debug(
         "probe_bridge: launching probe city=%s fecha=%s seed=%s",
@@ -239,3 +242,162 @@ def _run_probe(tmpdir: Path, **kwargs) -> Dict[str, Any]:
         kwargs.get("city"),
     )
     return result
+
+
+# ---------------------------------------------------------------------------
+# Driver helpers — available in AlfredProd (insert_algorithms.py is stripped)
+# ---------------------------------------------------------------------------
+
+def _filter_drivers_by_city(directorio_df: pd.DataFrame, city: Any) -> pd.DataFrame:
+    """Return the subset of directorio_df whose department matches *city*."""
+    if directorio_df is None or directorio_df.empty:
+        return pd.DataFrame()
+
+    department_key = str(city).strip()
+    if not department_key:
+        return directorio_df.iloc[0:0].copy()
+
+    candidate_masks: List[pd.Series] = []
+    for col in ("department_code", "department_name", "city"):
+        if col in directorio_df.columns:
+            candidate_masks.append(
+                directorio_df[col].astype(str).str.strip() == department_key
+            )
+
+    for mask in candidate_masks:
+        df_city = directorio_df.loc[mask].copy()
+        if not df_city.empty:
+            return df_city
+
+    return directorio_df.iloc[0:0].copy()
+
+
+def _extract_driver_key(driver_row: pd.Series) -> Optional[str]:
+    """Return the canonical driver ID string from a directory row, or None."""
+    for col in ("driver_id", "ALFRED'S"):
+        if col in driver_row.index:
+            value = driver_row.get(col)
+            if pd.notna(value):
+                key = str(value).strip()
+                if key:
+                    return key
+    return None
+
+
+def get_drivers(
+    labors_algo_df: pd.DataFrame,
+    directorio_df: pd.DataFrame,
+    city: str,
+    fecha=None,
+    get_all: bool = True,
+) -> List[str]:
+    """Return driver IDs for a city. Uses directory if get_all=True, otherwise labors."""
+    if get_all:
+        dir_city = _filter_drivers_by_city(directorio_df, city)
+        drivers: List[str] = []
+        for _, row in dir_city.iterrows():
+            key = _extract_driver_key(row)
+            if key:
+                drivers.append(key)
+        return list(dict.fromkeys(drivers))  # deduplicate, preserve order
+    else:
+        mask = labors_algo_df["department_code"] == city
+        if fecha is not None:
+            fecha_date = pd.to_datetime(fecha).date()
+            mask = mask & (labors_algo_df["schedule_date"].dt.date == fecha_date)
+        drivers_series = labors_algo_df[mask]["assigned_driver"].dropna().astype(str)
+        return [d for d in drivers_series.unique() if d.strip() not in ("", "nan", "None")]
+
+
+def init_drivers(
+    labors_df: pd.DataFrame,
+    directorio_df: pd.DataFrame,
+    city: str = "BOGOTA",
+    ignore_schedule: bool = False,
+    **kwargs: Any,
+) -> Dict[str, Any]:
+    """Initialise driver positions and availability for preassigned-state reconstruction."""
+    import math as _math
+    from datetime import datetime as _datetime, time as _time
+
+    if labors_df.empty:
+        return {}
+
+    tz = labors_df["schedule_date"].dt.tz
+    if tz is None:
+        raise ValueError("La columna 'schedule_date' no tiene zona horaria asignada.")
+
+    first_date = labors_df["schedule_date"].dt.date.min()
+    if pd.isna(first_date):
+        raise ValueError("No se pudo determinar la fecha mínima en 'schedule_date'.")
+
+    df_ciudad = _filter_drivers_by_city(directorio_df, city)
+
+    conductores: Dict[str, Any] = {}
+    for _, conductor in df_ciudad.iterrows():
+        if pd.isna(conductor["latitud"]) or pd.isna(conductor["longitud"]):
+            continue
+
+        driver_key = _extract_driver_key(conductor)
+        if driver_key is None:
+            continue
+
+        if ignore_schedule:
+            hora_inicio = _time(0, 0, 0)
+        else:
+            try:
+                hora_inicio = _datetime.strptime(conductor["start_time"], "%H:%M:%S").time()
+            except ValueError:
+                raise ValueError(f"Formato invalido de hora para el conductor {driver_key}")
+
+        disponibilidad = _datetime.combine(first_date, hora_inicio)
+
+        conductores[driver_key] = {
+            "position": f"POINT ({conductor['longitud']} {conductor['latitud']})",
+            "available": pd.Timestamp(disponibilidad).tz_localize(tz),
+            "work_start": hora_inicio,
+        }
+
+    return conductores
+
+
+def assign_task_to_driver(
+    driver_data: Dict[str, Any],
+    arrival: pd.Timestamp,
+    early: pd.Timestamp,
+    start_point: str,
+    end_point: str,
+    is_last_in_service: bool,
+    tiempo_alistar: int,
+    tiempo_finalizacion: int,
+    vehicle_speed: float,
+    method: str,
+    dist_dict: Optional[Dict[Any, Any]] = None,
+    time_method: str = "speed_based",
+    time_dict: Optional[Dict[Any, Any]] = None,
+    **kwargs: Any,
+) -> tuple:
+    """Assign a task to a driver and update their availability and position."""
+    import math as _math
+    from datetime import timedelta as _timedelta
+
+    from alfred.optimization.common.distance_utils import travel_time_minutes
+
+    astart = max(arrival, early)
+    dist_km, t_min, _, _ = travel_time_minutes(
+        start_point, end_point,
+        speed_kmh=vehicle_speed,
+        time_method=time_method,
+        dist_method=method,
+        dist_dict=dist_dict,
+        time_dict=time_dict,
+        **kwargs,
+    )
+    dur = tiempo_alistar + (0.0 if _math.isnan(t_min) else t_min) \
+          + (tiempo_finalizacion if not is_last_in_service else 0)
+    aend = astart + _timedelta(minutes=dur)
+
+    driver_data["available"] = aend
+    driver_data["position"] = end_point
+
+    return astart, aend, dist_km

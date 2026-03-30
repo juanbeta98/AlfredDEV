@@ -1,7 +1,12 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict
+
+
+def _default_base_dir() -> str:
+    from alfred.config import Config
+    return Config.MASTER_DATA_DIR
 
 
 @dataclass(frozen=True)
@@ -9,7 +14,7 @@ class MasterDataParams:
     """
     File locations for master data used by algorithms.
     """
-    base_dir: str = "data/master"
+    base_dir: str = field(default_factory=_default_base_dir)
     directorio_stem: str = "directorio"
     duraciones_stem: str = "duraciones"
     dist_dict_stem: str = "dist_dict"

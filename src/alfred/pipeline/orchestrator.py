@@ -73,6 +73,19 @@ logger = logging.getLogger(__name__)
 set_pipeline_logger(logger)
 
 
+def _validate_license() -> None:
+    dev_mode = os.environ.get("ALFRED_DEV_MODE", "").strip() not in ("", "0")
+    if dev_mode:
+        return
+    license_path = os.environ.get("ALFRED_LICENSE")
+    if not license_path:
+        raise RuntimeError(
+            "No license file provided. Set ALFRED_LICENSE to the path of the issued license file."
+        )
+    if not Path(license_path).exists():
+        raise RuntimeError(f"License file not found: {license_path}")
+
+
 # ======================================================
 # Entry point
 # ======================================================
@@ -91,6 +104,7 @@ def main() -> int:
     try:
         Config.validate()
         Config.configure_logging()
+        _validate_license()
 
     except Exception:
         _configure_fallback_logging()
