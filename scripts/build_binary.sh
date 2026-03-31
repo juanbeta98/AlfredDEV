@@ -96,7 +96,7 @@ _build_linux() {
     docker build \
         --no-cache \
         --platform linux/amd64 \
-        -f "${REPO_ROOT}/Dockerfile.builder" \
+        -f "${REPO_ROOT}/docker_config/Dockerfile.builder" \
         -t "${IMAGE_TAG}" \
         "${REPO_ROOT}"
 
