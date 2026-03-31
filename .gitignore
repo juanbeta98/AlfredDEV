@@ -36,7 +36,6 @@ data/profiling/
 
 # Docker
 osrm_resources/osrm_data/
-output/
 request/
 !request/.gitkeep
-!output/.gitkeep
+bin/

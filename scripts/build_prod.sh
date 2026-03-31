@@ -170,7 +170,7 @@ rsync -a \
     --exclude="request_avail.json" \
     --exclude="request/" \
     --exclude="validate_deployment.py" \
-    --exclude="docker-compose.yml" \
+    --exclude="docker_config/" \
     --exclude="res/" \
     "${DEV_ROOT}/" \
     "${OUTPUT_DIR}/"
