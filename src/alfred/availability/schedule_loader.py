@@ -10,6 +10,7 @@ single availability check run.
 """
 
 import logging
+import os
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -139,12 +140,61 @@ def load_schedule_state(
             if has_preassigned.any():
                 from alfred.optimization.common.preassigned import reconstruct_preassigned_state
 
+                # Pre-warm the distance cache with a single OSRM batch call covering all
+                # driver home positions × preassigned labor start/end points so that
+                # reconstruct_preassigned_state makes zero individual OSRM /route calls.
+                dist_dict_for_reconstruction = master_data.dist_dict
+                if settings.distance_method == "osrm":
+                    _osrm_url = os.environ.get("OSRM_URL", "")
+                    if _osrm_url:
+                        from alfred.optimization.common.distance_utils import batch_distance_matrix
+                        from alfred.availability.feasibility_probe import _city_dist_slice
+
+                        city_key = str(department_code)
+                        _driver_pts = [
+                            f"POINT ({row.longitud} {row.latitud})"
+                            for _, row in master_data.directorio_df.iterrows()
+                            if pd.notna(row.get("latitud")) and pd.notna(row.get("longitud"))
+                        ]
+                        _labor_starts = (
+                            input_df["map_start_point"].dropna().unique().tolist()
+                            if "map_start_point" in input_df.columns
+                            else input_df["start_address_point"].dropna().unique().tolist()
+                            if "start_address_point" in input_df.columns
+                            else []
+                        )
+                        _labor_ends = (
+                            input_df["map_end_point"].dropna().unique().tolist()
+                            if "map_end_point" in input_df.columns
+                            else input_df["end_address_point"].dropna().unique().tolist()
+                            if "end_address_point" in input_df.columns
+                            else []
+                        )
+                        _sched_points = list(dict.fromkeys(
+                            _driver_pts + _labor_starts + _labor_ends
+                        ))
+                        if len(_sched_points) >= 2:
+                            _batch_dist, _ = batch_distance_matrix(
+                                _sched_points, _sched_points, _osrm_url,
+                                include_times=False,
+                            )
+                            if _batch_dist:
+                                _city_cache = _city_dist_slice(master_data.dist_dict, city_key)
+                                dist_dict_for_reconstruction = {
+                                    **master_data.dist_dict,
+                                    city_key: {**_city_cache, **_batch_dist},
+                                }
+                                logger.info(
+                                    "availability_preassigned_osrm_precompute city=%s unique_points=%d pairs=%d",
+                                    city_key, len(_sched_points), len(_batch_dist),
+                                )
+
                 base_labors_df, _, base_moves_df, _ = reconstruct_preassigned_state(
                     input_df,
                     directorio_df=master_data.directorio_df,
                     duraciones_df=master_data.duraciones_df,
                     dist_method=settings.distance_method,
-                    dist_dict=master_data.dist_dict,
+                    dist_dict=dist_dict_for_reconstruction,
                     model_params=settings.model_params,
                 )
                 logger.info(

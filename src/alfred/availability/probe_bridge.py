@@ -102,6 +102,7 @@ def run_insertion_worker_bridge(
     duraciones_df: Optional[pd.DataFrame] = None,
     time_method: str = "speed_based",
     time_dict: Optional[Dict[Any, Any]] = None,
+    model_params=None,
 ) -> Dict[str, Any]:
     """
     Delegate a single insertion-feasibility probe to the alfred_solver binary.

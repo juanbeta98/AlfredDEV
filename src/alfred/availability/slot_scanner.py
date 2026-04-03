@@ -92,6 +92,7 @@ def scan_availability(
     # Build the full distance matrix once so all slot probes start with a warm
     # cache and make zero individual OSRM HTTP calls.
     _precomputed_dist_dict: Optional[Dict] = None
+    _precomputed_time_dict: Optional[Dict] = None
     if state.settings.distance_method == "osrm":
         _osrm_url = os.environ.get("OSRM_URL", "")
         if _osrm_url:
@@ -115,25 +116,27 @@ def scan_availability(
             _all_points = list(dict.fromkeys(
                 _driver_positions + _base_starts + _base_ends + _req_starts + _req_ends
             ))
-            _precomp_dist, _ = batch_distance_matrix(
+            _precomp_dist, _precomp_time = batch_distance_matrix(
                 _all_points, _all_points, _osrm_url,
                 include_times=(state.settings.time_method == "osrm_times"),
             )
             if _precomp_dist:
                 _city_cache = _city_dist_slice(state.master_data.dist_dict, city_key)
                 _precomputed_dist_dict = {**_precomp_dist, **_city_cache}
+                _precomputed_time_dict = _precomp_time if _precomp_time else None
                 logger.info(
-                    "availability_osrm_precompute city=%s unique_points=%d pairs=%d",
-                    city_key, len(_all_points), len(_precomp_dist),
+                    "availability_osrm_precompute city=%s unique_points=%d pairs=%d time_pairs=%d",
+                    city_key, len(_all_points), len(_precomp_dist), len(_precomp_time),
                 )
             else:
+                _precomputed_time_dict = None
                 logger.warning(
                     "availability_osrm_precompute_failed city=%s — probes will use per-call fallback",
                     city_key,
                 )
 
     # Phase 1: check desired slot
-    desired_result = probe_slot(request.desired_slot, request, state, dist_dict=_precomputed_dist_dict)
+    desired_result = probe_slot(request.desired_slot, request, state, dist_dict=_precomputed_dist_dict, time_dict=_precomputed_time_dict)
 
     if desired_result.feasible:
         logger.info(
@@ -160,7 +163,7 @@ def scan_availability(
 
     feasible_slots: List[TimeSlotResult] = []
     for slot in slots:
-        result = probe_slot(slot, request, state, dist_dict=_precomputed_dist_dict)
+        result = probe_slot(slot, request, state, dist_dict=_precomputed_dist_dict, time_dict=_precomputed_time_dict)
         if result.feasible:
             feasible_slots.append(result)
 

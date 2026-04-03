@@ -75,6 +75,7 @@ def probe_slot(
     request: ServiceRequest,
     state: ScheduleState,
     dist_dict: Optional[Dict[Any, Any]] = None,
+    time_dict: Optional[Dict[Any, Any]] = None,
 ) -> TimeSlotResult:
     """
     Test whether the candidate service can be inserted at slot_time.
@@ -142,7 +143,7 @@ def probe_slot(
         workday_end_dt=workday_end_dt,
         duraciones_df=duraciones,
         time_method=state.settings.time_method,
-        time_dict={},
+        time_dict=time_dict or {},
         model_params=model_params,
     )
 

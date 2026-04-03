@@ -149,6 +149,7 @@ class OfflineAlgorithm(OptimizationAlgorithm):
         run_results: List[Tuple[pd.DataFrame, pd.DataFrame]] = []
         postponed_labors: List[Any] = []
         merged_time_dict: Dict[Any, Any] = {}
+        merged_dist_dict: Dict[Any, Any] = {}  # city_key → flat {(p1,p2): km}
 
         for city_key in cities:
             df_city = df[city_keys == city_key]
@@ -186,6 +187,7 @@ class OfflineAlgorithm(OptimizationAlgorithm):
                         dist_dict = {**_precomp_dist, **dist_dict}   # existing entries take priority
                         time_dict = _precomp_time
                         merged_time_dict.update(time_dict)
+                        merged_dist_dict[city_key] = dist_dict
                         logger.info(
                             "osrm_precompute city=%s unique_points=%d pairs=%d time_pairs=%d",
                             city_key, len(_all_points), len(_precomp_dist), len(_precomp_time),
@@ -260,6 +262,7 @@ class OfflineAlgorithm(OptimizationAlgorithm):
             "distance_method": self.config.distance_method,
             "time_method": self.config.time_method,
             "time_dict": merged_time_dict,
+            **({"dist_dict": merged_dist_dict} if merged_dist_dict else {}),
         }
 
         return results_df, metrics, artifacts

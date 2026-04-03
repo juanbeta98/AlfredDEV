@@ -60,6 +60,7 @@ def _run_single_iter_shared(slim_args: Dict[str, Any]) -> Dict[str, Any]:
         early_buffer=args["early_buffer"],
         workday_end_dt=args["workday_end_dt"],
         duraciones_df=args.get("duraciones_df"),
+        model_params=args.get("model_params"),
     )
 
 
@@ -196,6 +197,7 @@ class InsertAlgorithm(OptimizationAlgorithm):
                 early_buffer=shared["early_buffer"],
                 workday_end_dt=shared["workday_end_dt"],
                 duraciones_df=shared.get("duraciones_df"),
+                model_params=shared.get("model_params"),
             ))
         return results
 
@@ -244,6 +246,7 @@ class InsertAlgorithm(OptimizationAlgorithm):
         updated_base_parts: List[pd.DataFrame] = []
         updated_base_moves_parts: List[pd.DataFrame] = []
         merged_time_dict: Dict[Any, Any] = {}
+        merged_dist_dict: Dict[Any, Any] = {}  # city_key → flat {(p1,p2): km}
 
         date_series = new_labors_df["schedule_date"].dt.date
 
@@ -303,6 +306,7 @@ class InsertAlgorithm(OptimizationAlgorithm):
                         dist_dict = {**_precomp_dist, **dist_dict}   # existing entries take priority
                         time_dict = _precomp_time
                         merged_time_dict.update(time_dict)
+                        merged_dist_dict[city_key] = dist_dict
                         logger.info(
                             "osrm_precompute city=%s unique_points=%d pairs=%d time_pairs=%d",
                             city_key, len(_all_points), len(_precomp_dist), len(_precomp_time),
@@ -450,6 +454,7 @@ class InsertAlgorithm(OptimizationAlgorithm):
             "distance_method": dist_method,
             "time_method": self.config.time_method,
             "time_dict": merged_time_dict,
+            **({"dist_dict": merged_dist_dict} if merged_dist_dict else {}),
             "updated_base_labors_df": updated_base_df,
             "updated_base_moves_df": updated_base_moves_df,
         }
