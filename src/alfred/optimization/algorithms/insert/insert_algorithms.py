@@ -96,6 +96,8 @@ def _compute_arrival_to_next_labor(
     speed: float,
     distance_method: str,
     dist_dict: DistDict,
+    model_params=None,
+    time_dict: Optional[Dict[Any, Any]] = None,
     **kwargs,
 ) -> Tuple:
     """Return (arrival_time, dist_km, travel_min)."""
@@ -105,7 +107,11 @@ def _compute_arrival_to_next_labor(
     )
     if dist_km is None or (isinstance(dist_km, float) and math.isnan(dist_km)):
         dist_km = 0.0
-    travel_min = dist_km / speed * 60
+    if model_params is not None and time_dict is not None:
+        osrm_t = time_dict.get((current_end_pos, target_pos), float("nan"))
+        travel_min = model_params.driver_move_time_min(dist_km, osrm_t)
+    else:
+        travel_min = dist_km / speed * 60
     return current_end_time + timedelta(minutes=travel_min), dist_km, travel_min
 
 
@@ -166,6 +172,8 @@ def _can_reach_next_labor(
     driver_speed: float,
     grace_time: float,
     early_buffer: float,
+    model_params=None,
+    time_dict: Optional[Dict[Any, Any]] = None,
     **kwargs,
 ) -> Tuple:
     """
@@ -178,7 +186,11 @@ def _can_reach_next_labor(
     )
     if dist_km is None or (isinstance(dist_km, float) and math.isnan(dist_km)):
         dist_km = 0.0
-    travel_min = dist_km / driver_speed * 60
+    if model_params is not None and time_dict is not None:
+        osrm_t = time_dict.get((new_finish_pos, next_start_pos), float("nan"))
+        travel_min = model_params.driver_move_time_min(dist_km, osrm_t)
+    else:
+        travel_min = dist_km / driver_speed * 60
     next_arrival = new_finish_time + timedelta(minutes=travel_min)
     next_real, next_move_start = _adjust_for_early_arrival(
         would_arrive_at=next_arrival,
@@ -319,6 +331,8 @@ def _simulate_downstream_shift(
     TIEMPO_FINALIZACION: float,
     TIEMPO_GRACIA: float,
     EARLY_BUFFER: float,
+    model_params=None,
+    time_dict: Optional[Dict[Any, Any]] = None,
     **kwargs,
 ) -> Tuple[bool, List[pd.DataFrame]]:
     """
@@ -361,6 +375,8 @@ def _simulate_downstream_shift(
             speed=ALFRED_SPEED,
             distance_method=distance_method,
             dist_dict=dist_dict,
+            model_params=model_params,
+            time_dict=time_dict,
             **kwargs,
         )
 
@@ -430,6 +446,8 @@ def _direct_insertion_empty_driver(
     TIEMPO_ALISTAR: float,
     TIEMPO_FINALIZACION: float,
     EARLY_BUFFER: float,
+    model_params=None,
+    time_dict: Optional[Dict[Any, Any]] = None,
     **kwargs,
 ) -> Tuple[bool, str, Optional[dict]]:
     home_pos = _get_driver_home_pos(directorio_df, driver)
@@ -446,6 +464,8 @@ def _direct_insertion_empty_driver(
         speed=alfred_speed,
         distance_method=distance_method,
         dist_dict=dist_dict,
+        model_params=model_params,
+        time_dict=time_dict,
         **kwargs,
     )
 
@@ -529,6 +549,8 @@ def _evaluate_and_execute_insertion_before_first_labor(
     tiempo_finalizacion: float,
     tiempo_gracia: float,
     early_buffer: float,
+    model_params=None,
+    time_dict: Optional[Dict[Any, Any]] = None,
     **kwargs,
 ) -> Tuple[bool, str, Optional[dict]]:
     next_labor = moves_driver_df.loc[2]  # First _labor row in the reset-index triplet
@@ -545,6 +567,8 @@ def _evaluate_and_execute_insertion_before_first_labor(
         speed=alfred_speed,
         distance_method=distance_method,
         dist_dict=dist_dict,
+        model_params=model_params,
+        time_dict=time_dict,
         **kwargs,
     )
 
@@ -576,6 +600,8 @@ def _evaluate_and_execute_insertion_before_first_labor(
             driver_speed=alfred_speed,
             grace_time=tiempo_gracia,
             early_buffer=early_buffer,
+            model_params=model_params,
+            time_dict=time_dict,
             **kwargs,
         )
     )
@@ -683,6 +709,8 @@ def evaluate_driver_feasibility(
     TIEMPO_GRACIA: float,
     EARLY_BUFFER: float,
     forced_start_time=None,
+    model_params=None,
+    time_dict: Optional[Dict[Any, Any]] = None,
     **kwargs,
 ) -> Tuple[bool, str, Optional[dict]]:
     """
@@ -710,6 +738,8 @@ def evaluate_driver_feasibility(
             TIEMPO_ALISTAR=TIEMPO_ALISTAR,
             TIEMPO_FINALIZACION=TIEMPO_FINALIZACION,
             EARLY_BUFFER=EARLY_BUFFER,
+            model_params=model_params,
+            time_dict=time_dict,
             **kwargs,
         )
 
@@ -731,6 +761,8 @@ def evaluate_driver_feasibility(
                 tiempo_finalizacion=TIEMPO_FINALIZACION,
                 tiempo_gracia=TIEMPO_GRACIA,
                 early_buffer=EARLY_BUFFER,
+                model_params=model_params,
+                time_dict=time_dict,
                 **kwargs,
             )
 
@@ -763,6 +795,8 @@ def evaluate_driver_feasibility(
             speed=ALFRED_SPEED,
             distance_method=distance_method,
             dist_dict=dist_dict,
+            model_params=model_params,
+            time_dict=time_dict,
             **kwargs,
         )
 
@@ -801,6 +835,8 @@ def evaluate_driver_feasibility(
                 driver_speed=ALFRED_SPEED,
                 grace_time=TIEMPO_GRACIA,
                 early_buffer=EARLY_BUFFER,
+                model_params=model_params,
+                time_dict=time_dict,
                 **kwargs,
             )
         )
@@ -836,6 +872,8 @@ def evaluate_driver_feasibility(
             TIEMPO_FINALIZACION=TIEMPO_FINALIZACION,
             TIEMPO_GRACIA=TIEMPO_GRACIA,
             EARLY_BUFFER=EARLY_BUFFER,
+            model_params=model_params,
+            time_dict=time_dict,
             **kwargs,
         )
 
@@ -913,6 +951,8 @@ def evaluate_driver_feasibility(
             speed=ALFRED_SPEED,
             distance_method=distance_method,
             dist_dict=dist_dict,
+            model_params=model_params,
+            time_dict=time_dict,
             **kwargs,
         )
 
@@ -1156,6 +1196,7 @@ def commit_labor_insertion(
     selection_mode: str = "min_total_distance",
     time_method: str = "speed_based",
     time_dict: Optional[Dict[Any, Any]] = None,
+    model_params=None,
     **kwargs,
 ) -> Tuple[bool, pd.DataFrame, pd.DataFrame, Optional[Any], Optional[str]]:
     """
@@ -1189,6 +1230,7 @@ def commit_labor_insertion(
             forced_start_time=forced_start_time,
             time_method=time_method,
             time_dict=time_dict,
+            model_params=model_params,
             **kwargs,
         )
 
@@ -1398,6 +1440,7 @@ def run_insertion_worker(
     duraciones_df: Optional[pd.DataFrame] = None,
     time_method: str = "speed_based",
     time_dict: Optional[Dict[Any, Any]] = None,
+    model_params=None,
 ) -> Dict[str, Any]:
     """
     Attempt to insert all new labors into the base schedule using a randomised
@@ -1464,6 +1507,7 @@ def run_insertion_worker(
                         selection_mode="random",
                         time_method=time_method,
                         time_dict=time_dict,
+                        model_params=model_params,
                     )
                 )
 

@@ -362,6 +362,7 @@ class InsertAlgorithm(OptimizationAlgorithm):
                 "early_buffer": early_buffer,
                 "workday_end_dt": workday_end_dt,
                 "duraciones_df": dur_df,
+                "model_params": model_params,
             }
 
             iteration_results = self._run_iterations(

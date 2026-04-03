@@ -15,6 +15,7 @@ import pandas as pd
 
 from .distance_utils import distance
 from ...data.id_normalization import normalize_id_value
+from ..settings.model_params import ModelParams
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +88,8 @@ def build_driver_movements(
     dist_dict: Optional[DistDict],
     ALFRED_SPEED: float,
     city_key: str,
+    model_params: Optional[ModelParams] = None,
+    time_dict: Optional[Dict[Any, Any]] = None,
     **kwargs: Any,
 ) -> pd.DataFrame:
     """
@@ -194,9 +197,17 @@ def build_driver_movements(
             **kwargs,
         )
         move_dkm = 0.0 if (pd.isna(move_dkm) or math.isnan(move_dkm)) else move_dkm
-        travel_time = (
-            timedelta(minutes=(move_dkm / ALFRED_SPEED * 60)) if move_dkm > 0 else timedelta(0)
-        )
+        if move_dkm > 0:
+            if model_params is not None and time_dict is not None:
+                osrm_t = time_dict.get(
+                    (prev_pos, row["map_start_point"]), float("nan")
+                )
+                travel_min = model_params.driver_move_time_min(move_dkm, osrm_t)
+            else:
+                travel_min = move_dkm / ALFRED_SPEED * 60
+            travel_time = timedelta(minutes=travel_min)
+        else:
+            travel_time = timedelta(0)
 
         labor_start = row[start_col]
         move_end = row[start_col]

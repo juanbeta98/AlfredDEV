@@ -159,22 +159,25 @@ def run_assignment_algorithm(
         if row['labor_category'] == 'VEHICLE_TRANSPORTATION':
         
             pick, dist_dict = get_driver_wrapper(
-                drivers, 
-                row, 
-                prev_end, 
-                tiempo_previo, 
+                drivers,
+                row,
+                prev_end,
+                tiempo_previo,
                 tiempo_gracia,
-                alfred_speed, 
-                dist_method, 
+                alfred_speed,
+                dist_method,
                 dist_dict,
-                alpha, 
+                alpha,
                 rng=rng,
+                model_params=model_params,
+                time_dict=time_dict,
                 **kwargs
             )
 
             if not pick:
                 overtime_pick = _get_overtime_fallback(
-                    drivers, row, tiempo_gracia, alfred_speed, dist_method, dist_dict, **kwargs
+                    drivers, row, tiempo_gracia, alfred_speed, dist_method, dist_dict,
+                    model_params=model_params, time_dict=time_dict, **kwargs
                 )
                 if not overtime_pick:
                     service_end_times[service_id] = pd.NaT
@@ -268,13 +271,15 @@ def run_assignment_algorithm(
 
     # — Reconstrucción de movimientos y tiempos libres —
     df_moves = build_driver_movements(
-        labors_df=df_result, 
-        directory_df=directorio_df, 
-        day_str=day_str, 
-        dist_method=dist_method, 
-        dist_dict=dist_dict, 
-        ALFRED_SPEED=alfred_speed, 
+        labors_df=df_result,
+        directory_df=directorio_df,
+        day_str=day_str,
+        dist_method=dist_method,
+        dist_dict=dist_dict,
+        ALFRED_SPEED=alfred_speed,
         city_key=city_key,
+        model_params=model_params,
+        time_dict=time_dict,
         **kwargs)
 
     return df_result, df_moves, postponed_labors, dist_dict
@@ -292,6 +297,8 @@ def get_candidate_drivers(
     alfred_speed: float,
     dist_method: str,
     dist_dict: Optional[DistDict],
+    model_params: Optional[ModelParams] = None,
+    time_dict: Optional[Dict[Any, Any]] = None,
     **kwargs: Any,
 ) -> Tuple[List[Candidate], DistDict]:
     """
@@ -340,7 +347,14 @@ def get_candidate_drivers(
             dist_dict=dist_dict_local,
             **kwargs,
         )
-        arr = av + timedelta(minutes=(0 if math.isnan(dkm) else dkm/alfred_speed*60))
+        if math.isnan(dkm):
+            travel_min = 0.0
+        elif model_params is not None and time_dict is not None:
+            osrm_t = time_dict.get((drv["position"], row["map_start_point"]), float("nan"))
+            travel_min = model_params.driver_move_time_min(dkm, osrm_t)
+        else:
+            travel_min = dkm / alfred_speed * 60
+        arr = av + timedelta(minutes=travel_min)
 
         if arr <= late:
             cands.append({'drv': name, 'arrival': arr, 'dist_km': dkm})
@@ -355,6 +369,8 @@ def _get_overtime_fallback(
     alfred_speed: float,
     dist_method: str,
     dist_dict: Optional[DistDict] = None,
+    model_params: Optional[ModelParams] = None,
+    time_dict: Optional[Dict[Any, Any]] = None,
     **kwargs: Any,
 ) -> Optional[Dict[str, Any]]:
     """
@@ -389,7 +405,13 @@ def _get_overtime_fallback(
             dist_dict=dist_dict_local,
             **kwargs,
         )
-        travel_min = 0.0 if math.isnan(dkm) else dkm / alfred_speed * 60
+        if math.isnan(dkm):
+            travel_min = 0.0
+        elif model_params is not None and time_dict is not None:
+            osrm_t = time_dict.get((drv["position"], row["map_start_point"]), float("nan"))
+            travel_min = model_params.driver_move_time_min(dkm, osrm_t)
+        else:
+            travel_min = dkm / alfred_speed * 60
         arrival = av + timedelta(minutes=travel_min)
         overtime = (arrival - late).total_seconds() / 60  # always > 0 in fallback path
 
@@ -621,6 +643,8 @@ def get_driver_wrapper(
     dist_dict: Optional[DistDict],
     alpha: float,
     rng: Optional[random.Random] = None,
+    model_params: Optional[ModelParams] = None,
+    time_dict: Optional[Dict[Any, Any]] = None,
     **kwargs: Any,
 ) -> Tuple[Optional[Candidate], DistDict]:
     """
@@ -655,14 +679,16 @@ def get_driver_wrapper(
 
     candidate_dist_method = dist_method
     cands, updated_dist_dict = get_candidate_drivers(
-        drivers=drivers, 
-        row=row, 
+        drivers=drivers,
+        row=row,
         prev_end=prev_end,
-        tiempo_previo=tiempo_previo, 
+        tiempo_previo=tiempo_previo,
         tiempo_gracia=tiempo_gracia,
-        alfred_speed=alfred_speed, 
-        dist_method=candidate_dist_method, 
+        alfred_speed=alfred_speed,
+        dist_method=candidate_dist_method,
         dist_dict=dist_dict,
+        model_params=model_params,
+        time_dict=time_dict,
         **kwargs
     )
     return select_from_candidates(cands, alpha, rng=rng), updated_dist_dict

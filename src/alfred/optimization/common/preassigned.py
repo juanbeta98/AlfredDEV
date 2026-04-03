@@ -394,6 +394,7 @@ def build_preassigned_state(
             dist_dict=city_dist,
             ALFRED_SPEED=alfred_speed,
             city_key=city_key,
+            # No model_params here: this path uses alfred_speed float fallback
         )
         if isinstance(moves, pd.DataFrame) and not moves.empty:
             moves_parts.append(moves)
@@ -578,7 +579,9 @@ def reconstruct_preassigned_state(
                     method=dist_method,
                     dist_dict=city_dist,
                 )
-                travel_min = 0 if pd.isna(dist_km) else (dist_km / alfred_speed * 60)
+                travel_min = 0 if pd.isna(dist_km) else model_params.driver_move_time_min(
+                    dist_km, float("nan")
+                )
                 arrival = av + timedelta(minutes=travel_min)
                 assigned_df.loc[idx, "computed_arrival"] = arrival
                 assigned_df.loc[idx, "computed_travel_min"] = float(travel_min)
@@ -735,6 +738,7 @@ def reconstruct_preassigned_state(
             dist_dict=city_dist,
             ALFRED_SPEED=alfred_speed,
             city_key=city_key,
+            model_params=model_params,
         )
         if isinstance(moves, pd.DataFrame) and not moves.empty:
             moves_parts.append(moves)

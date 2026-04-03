@@ -143,6 +143,7 @@ def probe_slot(
         duraciones_df=duraciones,
         time_method=state.settings.time_method,
         time_dict={},
+        model_params=model_params,
     )
 
     expected = len(request.labors)

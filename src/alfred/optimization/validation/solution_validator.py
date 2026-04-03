@@ -318,19 +318,20 @@ def validate_moves_df(
                 )
 
             if computed_dist is not None and reported_dur is not None:
+                # Derive travel time using the same method the solver used.
                 if cat == "DRIVER_MOVE":
-                    speed_kmh = model_params.alfred_speed_kmh
+                    osrm_t = time_dict.get((start_pt, end_pt), float("nan")) if time_dict else float("nan")
+                    t_min = model_params.driver_move_time_min(computed_dist, osrm_t)
                 elif cat == "VEHICLE_TRANSPORTATION":
                     speed_kmh = model_params.vehicle_transport_speed_kmh
+                    # For osrm_times: look up actual OSRM travel time from time_dict;
+                    # fall back to speed-based if the pair is not cached.
+                    if time_method == "osrm_times" and (start_pt, end_pt) in time_dict:
+                        t_min = time_dict[(start_pt, end_pt)]
+                    else:
+                        t_min = (computed_dist / speed_kmh) * 60
                 else:
                     speed_kmh = model_params.alfred_speed_kmh
-
-                # Derive travel time using the same method the solver used.
-                # For osrm_times: look up actual OSRM travel time from time_dict;
-                # fall back to speed-based if the pair is not cached.
-                if time_method == "osrm_times" and cat == "VEHICLE_TRANSPORTATION" and (start_pt, end_pt) in time_dict:
-                    t_min = time_dict[(start_pt, end_pt)]
-                else:
                     t_min = (computed_dist / speed_kmh) * 60
 
                 if cat == "VEHICLE_TRANSPORTATION":
