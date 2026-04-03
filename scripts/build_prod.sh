@@ -304,16 +304,15 @@ else
     exit 1
 fi
 
-# Patch pipeline entry points: harden _validate_license() — PROD only.
-# Remove the ALFRED_DEV_MODE early-return so license check is unconditional in PROD.
+# Patch pipeline entry points: inject _validate_license() enforcement — PROD only.
+# DEV source has a no-op stub; this replaces it with the real enforcement body.
 if [[ "${BUILD_TYPE}" != "prod" ]]; then
-    echo "  Skipping _validate_license hardening (dev build)."
+    echo "  Skipping _validate_license injection (dev build)."
 else
-for PIPELINE_FILE in \
-    "${OUTPUT_DIR}/src/alfred/pipeline/check_availability.py" \
-    "${OUTPUT_DIR}/src/alfred/pipeline/orchestrator.py"; do
-    if [[ -f "${PIPELINE_FILE}" ]]; then
-        python3 - "${PIPELINE_FILE}" << 'PATCHSCRIPT'
+    # orchestrator.py — raises RuntimeError
+    ORCH_FILE="${OUTPUT_DIR}/src/alfred/pipeline/orchestrator.py"
+    if [[ -f "${ORCH_FILE}" ]]; then
+        python3 - "${ORCH_FILE}" << 'PATCHSCRIPT'
 import sys
 
 path = sys.argv[1]
@@ -321,18 +320,21 @@ text = open(path).read()
 
 old = (
     "def _validate_license() -> None:\n"
-    "    dev_mode = os.environ.get(\"ALFRED_DEV_MODE\", \"\").strip() not in (\"\", \"0\")\n"
-    "    if dev_mode:\n"
-    "        return\n"
-    "    license_path = os.environ.get(\"ALFRED_LICENSE\")\n"
+    "    pass  # License enforcement is injected by build_prod.sh in production builds.\n"
 )
 new = (
     "def _validate_license() -> None:\n"
     "    license_path = os.environ.get(\"ALFRED_LICENSE\")\n"
+    "    if not license_path:\n"
+    "        raise RuntimeError(\n"
+    "            \"No license file provided. Set ALFRED_LICENSE to the path of the issued license file.\"\n"
+    "        )\n"
+    "    if not Path(license_path).exists():\n"
+    "        raise RuntimeError(f\"License file not found: {license_path}\")\n"
 )
 
 if old not in text:
-    print(f"ERROR: expected _validate_license pattern not found in {path}", file=sys.stderr)
+    print(f"ERROR: expected _validate_license stub not found in {path}", file=sys.stderr)
     sys.exit(1)
 
 patched = text.replace(old, new, 1)
@@ -340,10 +342,46 @@ open(path, "w").write(patched)
 print(f"  Patched: {path}")
 PATCHSCRIPT
     else
-        echo "ERROR: ${PIPELINE_FILE} not found" >&2
+        echo "ERROR: ${ORCH_FILE} not found" >&2
         exit 1
     fi
-done
+
+    # check_availability.py — raises LicenseError
+    AVAIL_FILE="${OUTPUT_DIR}/src/alfred/pipeline/check_availability.py"
+    if [[ -f "${AVAIL_FILE}" ]]; then
+        python3 - "${AVAIL_FILE}" << 'PATCHSCRIPT'
+import sys
+
+path = sys.argv[1]
+text = open(path).read()
+
+old = (
+    "def _validate_license() -> None:\n"
+    "    pass  # License enforcement is injected by build_prod.sh in production builds.\n"
+)
+new = (
+    "def _validate_license() -> None:\n"
+    "    license_path = os.environ.get(\"ALFRED_LICENSE\")\n"
+    "    if not license_path:\n"
+    "        raise LicenseError(\n"
+    "            \"No license file provided. Set ALFRED_LICENSE to the path of the issued license file.\"\n"
+    "        )\n"
+    "    if not Path(license_path).exists():\n"
+    "        raise LicenseError(f\"License file not found: {license_path}\")\n"
+)
+
+if old not in text:
+    print(f"ERROR: expected _validate_license stub not found in {path}", file=sys.stderr)
+    sys.exit(1)
+
+patched = text.replace(old, new, 1)
+open(path, "w").write(patched)
+print(f"  Patched: {path}")
+PATCHSCRIPT
+    else
+        echo "ERROR: ${AVAIL_FILE} not found" >&2
+        exit 1
+    fi
 fi  # end BUILD_TYPE == prod
 
 # ---------------------------------------------------------------------------

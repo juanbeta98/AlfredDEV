@@ -114,16 +114,7 @@ logger = logging.getLogger(__name__)
 
 
 def _validate_license() -> None:
-    dev_mode = os.environ.get("ALFRED_DEV_MODE", "").strip() not in ("", "0")
-    if dev_mode:
-        return
-    license_path = os.environ.get("ALFRED_LICENSE")
-    if not license_path:
-        raise LicenseError(
-            "No license file provided. Set ALFRED_LICENSE to the path of the issued license file."
-        )
-    if not Path(license_path).exists():
-        raise LicenseError(f"License file not found: {license_path}")
+    pass  # License enforcement is injected by build_prod.sh in production builds.
 
 
 def run(data: Dict[str, Any]) -> Dict[str, Any]:

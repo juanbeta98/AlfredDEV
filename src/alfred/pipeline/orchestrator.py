@@ -74,16 +74,7 @@ set_pipeline_logger(logger)
 
 
 def _validate_license() -> None:
-    dev_mode = os.environ.get("ALFRED_DEV_MODE", "").strip() not in ("", "0")
-    if dev_mode:
-        return
-    license_path = os.environ.get("ALFRED_LICENSE")
-    if not license_path:
-        raise RuntimeError(
-            "No license file provided. Set ALFRED_LICENSE to the path of the issued license file."
-        )
-    if not Path(license_path).exists():
-        raise RuntimeError(f"License file not found: {license_path}")
+    pass  # License enforcement is injected by build_prod.sh in production builds.
 
 
 # ======================================================

@@ -157,19 +157,7 @@ def _run_probe(tmpdir: Path, **kwargs) -> Dict[str, Any]:
             "Set ALFRED_SOLVER_BIN or install the binary to bin/alfred_solver."
         )
 
-    dev_mode = os.environ.get("ALFRED_DEV_MODE", "").strip() not in ("", "0")
     license = _license_path()
-    if not dev_mode:
-        if not license:
-            raise ProbeBridgeError(
-                "No license file provided. Set the ALFRED_LICENSE environment variable "
-                "to the path of the license file issued for this deployment."
-            )
-        if not Path(license).exists():
-            raise ProbeBridgeError(
-                f"License file not found: {license}. "
-                "Place the issued license file at this path before running."
-            )
 
     input_json = serialize_probe_input(tmpdir, **kwargs)
     log_file = tmpdir / "probe.log"
