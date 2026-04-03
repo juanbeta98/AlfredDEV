@@ -16,8 +16,5 @@
       "distance_method": "osrm",
       "time_method": "osrm_times"
     }
-  },
-  "output": {
-    "path": "./res/results"
   }
 }
