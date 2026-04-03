@@ -72,6 +72,9 @@ def _run_solve(input_json: Path, output_dir: Path) -> Path:
     Deserialize inputs, run OptimizationSolver, serialize outputs.
     Returns path to solver_output.json.
     """
+    import multiprocessing as _mp
+    _mp.set_start_method('fork', force=True)
+
     from solver_executable.serde import deserialize_solver_input, serialize_solver_output
 
     logger.info("solve: deserializing input from %s", input_json)
