@@ -155,6 +155,12 @@ OSRM_URL=http://osrm:5000/route/v1/driving/
 # ----------------------------------------------------------
 # ALFRED_SOLVER_TIMEOUT=600
 # ALFRED_PROBE_TIMEOUT=60
+
+# ----------------------------------------------------------
+# OPTIONAL: Output file generation
+#   Set to true to suppress all local run artifacts (recommended for prod)
+# ----------------------------------------------------------
+DISABLE_FILE_OUTPUT=true
 ENVTEMPLATE
 
 # ---------------------------------------------------------------------------
@@ -247,7 +253,12 @@ import os
 import sys
 import subprocess
 
+# _HERE is always the env root (this file is never inside a symlink).
+# Set RUNS_DIR before delegating so the app bundle writes runs here,
+# not inside the app/builds tree.
 _HERE = os.path.dirname(os.path.abspath(__file__))
+os.environ.setdefault("RUNS_DIR", os.path.join(_HERE, "runs"))
+
 sys.exit(subprocess.call(
     [sys.executable, os.path.join(_HERE, "app", "alfred_cli.py")] + sys.argv[1:]
 ))

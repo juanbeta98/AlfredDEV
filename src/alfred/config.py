@@ -95,6 +95,9 @@ class Config:
     WRITE_MODEL_SOLUTION: bool = (
         os.getenv("WRITE_MODEL_SOLUTION", "false").lower() == "true"
     )
+    DISABLE_FILE_OUTPUT: bool = (
+        os.getenv("DISABLE_FILE_OUTPUT", "false").lower() == "true"
+    )
     RUNS_DIR: str = os.getenv("RUNS_DIR", "./data/runs")
     MASTER_DATA_DIR: str = os.getenv("MASTER_DATA_DIR", "data/master")
     ARTIFACT_TIMEZONE: str = os.getenv("ARTIFACT_TIMEZONE", "America/Bogota")
@@ -146,7 +149,7 @@ class Config:
         if cls.REQUEST_TIMEOUT <= 0:
             raise RuntimeError("REQUEST_TIMEOUT must be a positive integer")
 
-        if not cls.RUNS_DIR.strip():
+        if not cls.DISABLE_FILE_OUTPUT and not cls.RUNS_DIR.strip():
             raise RuntimeError("RUNS_DIR must not be empty")
 
         try:
