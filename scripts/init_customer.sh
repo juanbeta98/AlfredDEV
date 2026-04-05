@@ -192,7 +192,9 @@ services:
       - alfred-net
 
   alfred:
-    build: ./app
+    build:
+      context: ./app
+      dockerfile: ../Dockerfile
     platform: linux/amd64
     container_name: alfred-solver
     restart: unless-stopped
@@ -215,7 +217,7 @@ COMPOSE
 # ---------------------------------------------------------------------------
 # license/README.md
 # ---------------------------------------------------------------------------
-echo "[5/6] Writing license/README.md..."
+echo "[5/6] Writing license/README.md and copying Dockerfile..."
 cat > "${OUTPUT_DIR}/license/README.md" << 'LICREADME'
 # license/
 
@@ -237,6 +239,11 @@ renew a license. A new license is only needed when:
 
 App bundle updates (new app/ zips) do NOT require a new license.
 LICREADME
+
+# ---------------------------------------------------------------------------
+# Dockerfile (Layer 1 — lives at customer root, referenced by docker-compose)
+# ---------------------------------------------------------------------------
+cp "${REPO_ROOT}/docker_config/Dockerfile" "${OUTPUT_DIR}/Dockerfile"
 
 # ---------------------------------------------------------------------------
 # alfred_cli.py launcher stub (Layer 1 entry point)
