@@ -28,13 +28,11 @@ def _build_registry() -> Mapping[str, Type[OptimizationAlgorithm]]:
     # Local imports to prevent import-time side effects
     from .insert.algorithm import InsertAlgorithm
     from .react.algorithm import ReactAlgorithm
-    from .alfred.algorithm import AlfredAlgorithm
     from .offline.algorithm import OfflineAlgorithm
 
     return {
         "INSERT": InsertAlgorithm,
         "REACT": ReactAlgorithm,
-        "ALFRED": AlfredAlgorithm,
         "OFFLINE": OfflineAlgorithm,
     }
 

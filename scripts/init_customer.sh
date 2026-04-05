@@ -155,6 +155,12 @@ OSRM_URL=http://osrm:5000/route/v1/driving/
 # ----------------------------------------------------------
 # ALFRED_SOLVER_TIMEOUT=600
 # ALFRED_PROBE_TIMEOUT=60
+
+# ----------------------------------------------------------
+# OPTIONAL: Output file generation
+#   Set to true to suppress all local run artifacts (recommended for prod)
+# ----------------------------------------------------------
+DISABLE_FILE_OUTPUT=true
 ENVTEMPLATE
 
 # ---------------------------------------------------------------------------
@@ -186,7 +192,9 @@ services:
       - alfred-net
 
   alfred:
-    build: ./app
+    build:
+      context: ./app
+      dockerfile: ../Dockerfile
     platform: linux/amd64
     container_name: alfred-solver
     restart: unless-stopped
@@ -209,7 +217,7 @@ COMPOSE
 # ---------------------------------------------------------------------------
 # license/README.md
 # ---------------------------------------------------------------------------
-echo "[5/6] Writing license/README.md..."
+echo "[5/6] Writing license/README.md and copying Dockerfile..."
 cat > "${OUTPUT_DIR}/license/README.md" << 'LICREADME'
 # license/
 
@@ -233,6 +241,11 @@ App bundle updates (new app/ zips) do NOT require a new license.
 LICREADME
 
 # ---------------------------------------------------------------------------
+# Dockerfile (Layer 1 — lives at customer root, referenced by docker-compose)
+# ---------------------------------------------------------------------------
+cp "${REPO_ROOT}/docker_config/Dockerfile" "${OUTPUT_DIR}/Dockerfile"
+
+# ---------------------------------------------------------------------------
 # alfred_cli.py launcher stub (Layer 1 entry point)
 # ---------------------------------------------------------------------------
 echo "[2b/6] Writing alfred_cli.py launcher stub..."
@@ -247,7 +260,12 @@ import os
 import sys
 import subprocess
 
+# _HERE is always the env root (this file is never inside a symlink).
+# Set RUNS_DIR before delegating so the app bundle writes runs here,
+# not inside the app/builds tree.
 _HERE = os.path.dirname(os.path.abspath(__file__))
+os.environ.setdefault("RUNS_DIR", os.path.join(_HERE, "runs"))
+
 sys.exit(subprocess.call(
     [sys.executable, os.path.join(_HERE, "app", "alfred_cli.py")] + sys.argv[1:]
 ))

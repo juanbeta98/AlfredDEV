@@ -5,7 +5,7 @@
 #   ./scripts/deliver.sh --type prod --customer "Cliente S.A." --code CLIENTE \
 #                        --expires 2026-12-31 [--notes "Initial delivery"]
 #                        [--binary-mac dist/alfred_solver_mac] [--binary-linux dist/alfred_solver_linux]
-#                        [--skip-binary] [--skip-linux] [--build-linux]
+#                        [--skip-binary] [--skip-linux] [--build-linux] [--dummy]
 #
 #   ./scripts/deliver.sh --type dev  --customer "Cliente S.A." --code CLIENTE \
 #                        [--notes "QA build"] [--binary-mac dist/alfred_solver_mac] [--skip-binary]
@@ -22,12 +22,18 @@
 #   --skip-binary   Omit binary from package (passed through to build_prod.sh)
 #   --skip-linux    PROD only: produce only the macOS zip, skip the Linux zip
 #   --build-linux   PROD only: auto-build the Linux binary via Docker before packaging
+#   --dummy         PROD only: test build — uses RTEST_<CODE>_<datetime> as release ID,
+#                   skips license issuance and log.csv entry. --expires is still required
+#                   syntactically but is ignored. Reuses the license already installed in
+#                   the customer environment.
 #
 # Output (PROD):
 #   builds/PROD/<release_id>_mac.zip    — macOS app bundle (Layer 2), unzip into customer's app/
 #   builds/PROD/<release_id>_linux.zip  — Linux app bundle (Layer 2), unzip into customer's app/
 #   releases/licenses/<release_id>.json — signed license (shared; send to customer separately)
+#                                         [skipped when --dummy]
 #   releases/log.csv                    — two new rows appended (one per platform)
+#                                         [skipped when --dummy]
 #
 # Output (DEV):
 #   builds/DEV/<release_id>.zip         — macOS app bundle only
@@ -60,6 +66,7 @@ BINARY_LINUX="${REPO_ROOT}/dist/alfred_solver_linux"
 SKIP_BINARY=0
 SKIP_LINUX=0
 BUILD_LINUX=0
+DUMMY=0
 
 # ---------------------------------------------------------------------------
 # Argument parsing
@@ -82,6 +89,7 @@ while [[ $# -gt 0 ]]; do
         --skip-binary)  SKIP_BINARY=1;      shift   ;;
         --skip-linux)   SKIP_LINUX=1;       shift   ;;
         --build-linux)  BUILD_LINUX=1;      shift   ;;
+        --dummy)        DUMMY=1;            shift   ;;
         --help|-h)      usage ;;
         *) echo "ERROR: Unknown option: $1" >&2; exit 1 ;;
     esac
@@ -131,20 +139,25 @@ mkdir -p "${LICENSES_DIR}" "${TYPE_DIR}"
 ISSUED_AT="$(date +%Y-%m-%d)"
 
 if [[ "$BUILD_TYPE" == "prod" ]]; then
-    # Find the highest R<N> number in log.csv (PROD rows only).
-    # Both R2_CLIENTE_mac and R2_CLIENTE_linux match R2, so the max is correct.
-    if [[ -f "$LOG_CSV" ]]; then
-        LAST_N=$(grep "^PROD," "$LOG_CSV" 2>/dev/null \
-            | awk -F',' '{print $2}' \
-            | grep -oE '^R[0-9]+' \
-            | grep -oE '[0-9]+' \
-            | sort -n \
-            | tail -1 || true)
+    if [[ $DUMMY -eq 1 ]]; then
+        DATETIME="$(date +%Y%m%d_%H%M)"
+        RELEASE_ID="RTEST_${CODE}_${DATETIME}"
     else
-        LAST_N=""
+        # Find the highest R<N> number in log.csv (PROD rows only).
+        # Both R2_CLIENTE_mac and R2_CLIENTE_linux match R2, so the max is correct.
+        if [[ -f "$LOG_CSV" ]]; then
+            LAST_N=$(grep "^PROD," "$LOG_CSV" 2>/dev/null \
+                | awk -F',' '{print $2}' \
+                | grep -oE '^R[0-9]+' \
+                | grep -oE '[0-9]+' \
+                | sort -n \
+                | tail -1 || true)
+        else
+            LAST_N=""
+        fi
+        NEXT_N=$(( ${LAST_N:-0} + 1 ))
+        RELEASE_ID="R${NEXT_N}_${CODE}"
     fi
-    NEXT_N=$(( ${LAST_N:-0} + 1 ))
-    RELEASE_ID="R${NEXT_N}_${CODE}"
 else
     # DEV: use datetime
     DATETIME="$(date +%Y%m%d_%H%M)"
@@ -165,7 +178,7 @@ fi
 # Step 3 (PROD only): Issue license — shared by both platform zips
 # ---------------------------------------------------------------------------
 LICENSE_OUT=""
-if [[ "$BUILD_TYPE" == "prod" ]]; then
+if [[ "$BUILD_TYPE" == "prod" && $DUMMY -eq 0 ]]; then
     LICENSE_OUT="${LICENSES_DIR}/${RELEASE_ID}.json"
     echo "==> Issuing license → ${LICENSE_OUT}"
     python "${REPO_ROOT}/license_tools/issue_license.py" \
@@ -289,18 +302,23 @@ fi
 # ---------------------------------------------------------------------------
 # Step 6: Append to log.csv
 # ---------------------------------------------------------------------------
-echo ""
-echo "==> Logging delivery..."
 NOTES_SAFE="$(echo "$NOTES" | tr ',' ';')"
 BUILD_TYPE_UPPER="$(echo "$BUILD_TYPE" | tr '[:lower:]' '[:upper:]')"
 
-if [[ "$BUILD_TYPE" == "prod" ]]; then
-    echo "PROD,${RELEASE_ID}_mac,${CUSTOMER},${ISSUED_AT},${EXPIRES},${MAC_HASH},${NOTES_SAFE}" >> "${LOG_CSV}"
-    if [[ $SKIP_LINUX -eq 0 ]]; then
-        echo "PROD,${RELEASE_ID}_linux,${CUSTOMER},${ISSUED_AT},${EXPIRES},${LINUX_HASH},${NOTES_SAFE}" >> "${LOG_CSV}"
-    fi
+if [[ $DUMMY -eq 1 ]]; then
+    echo ""
+    echo "==> Skipping log.csv entry (--dummy build)"
 else
-    echo "DEV,${RELEASE_ID},${CUSTOMER},${ISSUED_AT},,${DEV_HASH},${NOTES_SAFE}" >> "${LOG_CSV}"
+    echo ""
+    echo "==> Logging delivery..."
+    if [[ "$BUILD_TYPE" == "prod" ]]; then
+        echo "PROD,${RELEASE_ID}_mac,${CUSTOMER},${ISSUED_AT},${EXPIRES},${MAC_HASH},${NOTES_SAFE}" >> "${LOG_CSV}"
+        if [[ $SKIP_LINUX -eq 0 ]]; then
+            echo "PROD,${RELEASE_ID}_linux,${CUSTOMER},${ISSUED_AT},${EXPIRES},${LINUX_HASH},${NOTES_SAFE}" >> "${LOG_CSV}"
+        fi
+    else
+        echo "DEV,${RELEASE_ID},${CUSTOMER},${ISSUED_AT},,${DEV_HASH},${NOTES_SAFE}" >> "${LOG_CSV}"
+    fi
 fi
 
 # ---------------------------------------------------------------------------
@@ -308,7 +326,11 @@ fi
 # ---------------------------------------------------------------------------
 echo ""
 echo "============================================================"
+if [[ $DUMMY -eq 1 ]]; then
+echo " Delivery complete: ${RELEASE_ID}  [DUMMY — not tracked]"
+else
 echo " Delivery complete: ${RELEASE_ID}"
+fi
 echo "------------------------------------------------------------"
 echo " Type:        ${BUILD_TYPE_UPPER}"
 echo " Customer:    ${CUSTOMER}"
@@ -321,10 +343,15 @@ echo "   macOS:  ${MAC_ZIP}"
 if [[ $SKIP_LINUX -eq 0 ]]; then
 echo "   Linux:  ${LINUX_ZIP}"
 fi
+if [[ $DUMMY -eq 0 ]]; then
 echo ""
 echo " License:     ${LICENSE_OUT}"
 echo "   → Send to customer separately; they place it in license/"
 echo "   → This license is valid for all future builds (same keypair)"
+else
+echo ""
+echo " License:     (skipped — reuse existing license in customer env)"
+fi
 fi
 if [[ "$BUILD_TYPE" == "dev" ]]; then
 echo " Zip:         ${DEV_ZIP}"

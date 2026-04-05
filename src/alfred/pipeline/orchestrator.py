@@ -153,10 +153,14 @@ def main() -> int:
         return 1
 
     # Create run directory and attach file log now that output_dir is fully resolved
-    run_dir = Path(output_dir) / build_run_subdir(artifact_run_id)
-    run_dir.mkdir(parents=True, exist_ok=True)
-    write_run_manifest(run_dir, artifact_run_id, created_at=started_at)
-    add_file_log_handler(run_dir / "run.log")
+    if Config.DISABLE_FILE_OUTPUT:
+        run_dir = None
+        log_info("file_output_disabled")
+    else:
+        run_dir = Path(output_dir) / build_run_subdir(artifact_run_id)
+        run_dir.mkdir(parents=True, exist_ok=True)
+        write_run_manifest(run_dir, artifact_run_id, created_at=started_at)
+        add_file_log_handler(run_dir / "run.log")
 
     preassignment_mode = "keep_payload_assignments" if keep_payload_assignment else "reassign_infeasible_services"
     log_info(
@@ -220,7 +224,7 @@ def main() -> int:
             raw_input = apply_service_mask(raw_input, _mask_labor_ids)
         # -----------------------------------------------------------
 
-        if Config.WRITE_INTERMEDIATE_DATAFRAMES:
+        if Config.WRITE_INTERMEDIATE_DATAFRAMES and not Config.DISABLE_FILE_OUTPUT:
             intermediate_export_dir = _build_intermediate_export_dir(
                 run_id=artifact_run_id,
                 request_id=request_id,
@@ -347,7 +351,7 @@ def main() -> int:
         with log_step("validate_input"):
             valid_df, invalid_df, validation_report = validator.validate(input_df)
 
-        if Config.WRITE_VALIDATION_REPORTS:
+        if Config.WRITE_VALIDATION_REPORTS and not Config.DISABLE_FILE_OUTPUT:
             with log_step("write_validation_reports"):
                 save_local_validation_outputs(
                     invalid_df,
@@ -617,7 +621,7 @@ def main() -> int:
             preassigned_metrics["preassignment_mode"] = preassignment_mode
             metadata["preassigned"] = preassigned_metrics
 
-            if not preassigned_report_df.empty:
+            if not preassigned_report_df.empty and not Config.DISABLE_FILE_OUTPUT:
                 try:
                     with log_step("write_preassigned_reconstruction_reports"):
                         save_local_preassigned_reconstruction_reports(
@@ -746,7 +750,7 @@ def main() -> int:
             rows_reassignment_candidate=assignment_diagnostics.get("rows_reassignment_candidate", 0),
             rows_reassignment_failed=assignment_diagnostics.get("rows_reassignment_failed", 0),
         )
-        if Config.WRITE_MODEL_SOLUTION:
+        if Config.WRITE_MODEL_SOLUTION and not Config.DISABLE_FILE_OUTPUT:
             try:
                 with log_step("write_assignment_diagnostics_report"):
                     save_local_assignment_diagnostics_report(
@@ -819,7 +823,7 @@ def main() -> int:
                 strict_time_check=False,
             )
 
-        if Config.WRITE_VALIDATION_REPORTS:
+        if Config.WRITE_VALIDATION_REPORTS and not Config.DISABLE_FILE_OUTPUT:
             with log_step("write_solution_validation_outputs"):
                 save_local_solution_validation_outputs(
                     solution_validation_issues,
@@ -871,7 +875,7 @@ def main() -> int:
                 default_shift_end=settings.model_params.workday_end_str,
             )
 
-        if Config.WRITE_MODEL_SOLUTION:
+        if Config.WRITE_MODEL_SOLUTION and not Config.DISABLE_FILE_OUTPUT:
             with log_step("write_solution_evaluation_output"):
                 save_local_solution_evaluation_report(
                     evaluation_report,
@@ -920,7 +924,7 @@ def main() -> int:
     # 12. Deliver output
     # --------------------------------------------------
     try:
-        if Config.WRITE_MODEL_SOLUTION:
+        if Config.WRITE_MODEL_SOLUTION and not Config.DISABLE_FILE_OUTPUT:
             with log_step("save_model_solution_artifacts"):
                 save_local_output(
                     results,
@@ -933,7 +937,7 @@ def main() -> int:
                     run_id=artifact_run_id,
                 )
 
-        with log_step("save_warnings_report"):
+        if not Config.DISABLE_FILE_OUTPUT:
             _overtime_series = results.get("overtime_minutes", pd.Series(dtype=float)).fillna(0) if results is not None and not results.empty else pd.Series(dtype=float)
             _preassigned_infeasible = int(preassigned_df["is_infeasible"].fillna(False).sum()) if not preassigned_df.empty and "is_infeasible" in preassigned_df.columns else 0
             _nontransport_mask = (
@@ -967,7 +971,8 @@ def main() -> int:
                     "estimated_time_fallback_labor_ids": _et_fallback_ids,
                 },
             }
-            save_local_warnings_report(warnings_report, output_dir=output_dir, run_id=artifact_run_id)
+            with log_step("save_warnings_report"):
+                save_local_warnings_report(warnings_report, output_dir=output_dir, run_id=artifact_run_id)
 
         if use_api:
             sender = ResultSender(
@@ -1029,18 +1034,19 @@ def main() -> int:
             "processed": _labors_processed,
             "assigned": _labors_assigned,
         }
-        finalize_run_manifest(
-            run_dir,
-            status="success",
-            duration_seconds=elapsed,
-            solver=str(settings.algorithm or "default").upper(),
-            services_total=_services_total,
-            services_planned=_services_planned,
-            services_failed=_services_failed,
-            labors_summary=_labors_summary,
-            instance_config=_instance_config,
-            algorithm_config=_algorithm_config,
-        )
+        if not Config.DISABLE_FILE_OUTPUT:
+            finalize_run_manifest(
+                run_dir,
+                status="success",
+                duration_seconds=elapsed,
+                solver=str(settings.algorithm or "default").upper(),
+                services_total=_services_total,
+                services_planned=_services_planned,
+                services_failed=_services_failed,
+                labors_summary=_labors_summary,
+                instance_config=_instance_config,
+                algorithm_config=_algorithm_config,
+            )
     except Exception:
         logger.exception("run_manifest_finalization_failed")
     return 0

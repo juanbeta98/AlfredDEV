@@ -112,6 +112,22 @@ def _df_to_dist_dict(df: pd.DataFrame) -> Dict[str, Dict[Tuple[str, str], Any]]:
     return dist_dict
 
 
+def _time_dict_to_df(time_dict: Dict[Tuple[str, str], Any]) -> pd.DataFrame:
+    """Convert flat time_dict {(p1, p2): minutes} → DataFrame [p1, p2, time_min]."""
+    rows: List[Tuple[str, str, Any]] = []
+    for (p1, p2), t in time_dict.items():
+        rows.append((str(p1), str(p2), t))
+    return pd.DataFrame(rows, columns=["p1", "p2", "time_min"])
+
+
+def _df_to_time_dict(df: pd.DataFrame) -> Dict[Tuple[str, str], Any]:
+    """Reconstruct time_dict from DataFrame [p1, p2, time_min]."""
+    result: Dict[Tuple[str, str], Any] = {}
+    for p1, p2, t in df[["p1", "p2", "time_min"]].itertuples(index=False):
+        result[(str(p1), str(p2))] = t
+    return result
+
+
 def _settings_to_dict(settings) -> Dict[str, Any]:
     """Serialize OptimizationSettings to a plain dict (JSON-safe)."""
     d = dataclasses.asdict(settings)
@@ -444,6 +460,11 @@ def serialize_probe_input(
     wrapped_dist = {str(city): dist_dict} if dist_dict else {}
     _write_parquet(_dist_dict_to_df(wrapped_dist), tmpdir / "dist_dict.parquet")
 
+    # time_dict has tuple keys — cannot be inlined in JSON; write to Parquet instead.
+    has_time_dict = bool(time_dict)
+    if has_time_dict:
+        _write_parquet(_time_dict_to_df(time_dict), tmpdir / "time_dict.parquet")
+
     # workday_end_dt: pd.Timestamp or datetime → isoformat string
     workday_end_str = None
     if workday_end_dt is not None:
@@ -463,7 +484,6 @@ def serialize_probe_input(
         "early_buffer": early_buffer,
         "workday_end_dt_iso": workday_end_str,
         "time_method": time_method,
-        "time_dict": time_dict or {},
     }
 
     envelope = {
@@ -478,6 +498,7 @@ def serialize_probe_input(
             "directorio": "directorio.parquet",
             "dist_dict": "dist_dict.parquet",
             **({"duraciones": "duraciones.parquet"} if has_duraciones else {}),
+            **({"time_dict": "time_dict.parquet"} if has_time_dict else {}),
         },
     }
 
@@ -550,7 +571,7 @@ def deserialize_probe_input(
         "workday_end_dt": workday_end_dt,
         "duraciones_df": duraciones_df,
         "time_method": str(pp.get("time_method", "speed_based")),
-        "time_dict": dict(pp.get("time_dict") or {}),
+        "time_dict": _df_to_time_dict(_read_parquet(tmpdir / files["time_dict"])) if "time_dict" in files else {},
     }
 
 
