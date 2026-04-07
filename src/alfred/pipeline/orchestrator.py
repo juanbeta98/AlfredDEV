@@ -1017,11 +1017,14 @@ def main() -> int:
             "end_date": _end_date,
         }
         _n_proc = settings.n_processes
+        _algo_name_upper = str(settings.algorithm or "default").upper()
+        _algo_overrides  = settings.overrides.get(_algo_name_upper, {})
         _algorithm_config = {
-            "name": str(settings.algorithm or "default").upper(),
-            "max_iterations": {d: v for d, v in settings.max_iterations.get(str(settings.algorithm or "").upper(), {}).items() if d in _dept_codes},
+            "name": _algo_name_upper,
+            "max_iterations": {d: v for d, v in settings.max_iterations.get(_algo_name_upper, {}).items() if d in _dept_codes},
             "n_processes": _n_proc,
             "parallel": _n_proc is not None and _n_proc != 1,
+            "time_previous_freeze": _algo_overrides.get("time_previous_freeze"),
         }
         _labors_total = int(len(results)) if not results.empty else 0
         _labors_preassigned = int(len(preassigned_df)) if not preassigned_df.empty else 0
