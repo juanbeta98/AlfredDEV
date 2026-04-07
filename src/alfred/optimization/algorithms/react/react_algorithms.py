@@ -8,7 +8,7 @@ the driver state that reflects where each driver will be after completing frozen
 from __future__ import annotations
 
 import logging
-from typing import Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 import pandas as pd
 
@@ -89,6 +89,65 @@ def split_labors_by_freeze_cutoff(
         ].copy()
 
     return frozen_labors, reassignable_labors, frozen_moves
+
+
+def compute_disruption_stats(results_df: pd.DataFrame) -> Dict[str, Any]:
+    """
+    Compute disruption statistics from a REACT iteration's results DataFrame.
+
+    A labor is a "disruption candidate" when it has a non-null
+    ``original_assigned_driver`` (i.e. it was a reassignable labor with a
+    prior driver assignment).  New labors that were never preassigned have no
+    ``original_assigned_driver`` and are excluded entirely.
+
+    Among the candidates, a disruption occurs when the new ``assigned_driver``
+    differs from the original or is null (labor went unassigned).
+
+    Parameters
+    ----------
+    results_df:
+        The assignment DataFrame from one REACT iteration (the ``"results"``
+        key inside a df_results row).  Expected to carry ``assigned_driver``
+        and optionally ``original_assigned_driver``.
+
+    Returns
+    -------
+    dict with keys:
+        ``reassignable_with_prior_driver``  int   — labors with a prior driver
+        ``driver_changed_count``            int   — labors where driver changed or lost
+        ``disruption_rate``                 float — driver_changed_count / reassignable_with_prior_driver
+                                                    (0.0 when denominator is 0)
+    """
+    zero: Dict[str, Any] = {
+        "reassignable_with_prior_driver": 0,
+        "driver_changed_count": 0,
+        "disruption_rate": 0.0,
+    }
+    if not isinstance(results_df, pd.DataFrame) or results_df.empty:
+        return zero
+    if "original_assigned_driver" not in results_df.columns:
+        return zero
+
+    candidates = results_df[results_df["original_assigned_driver"].notna()]
+    reassignable_count = len(candidates)
+    if reassignable_count == 0:
+        return zero
+
+    orig = candidates["original_assigned_driver"].astype(str)
+    if "assigned_driver" in candidates.columns:
+        new_drv = candidates["assigned_driver"]
+        changed = new_drv.isna() | (new_drv.astype(str) != orig)
+    else:
+        changed = pd.Series(True, index=candidates.index)
+
+    driver_changed_count = int(changed.sum())
+    disruption_rate = round(driver_changed_count / reassignable_count, 4)
+
+    return {
+        "reassignable_with_prior_driver": reassignable_count,
+        "driver_changed_count": driver_changed_count,
+        "disruption_rate": disruption_rate,
+    }
 
 
 def build_post_freeze_driver_states(

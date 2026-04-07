@@ -14,6 +14,7 @@ from alfred.optimization.algorithms.offline.algorithm import (
 )
 from alfred.optimization.algorithms.react.react_algorithms import (
     build_post_freeze_driver_states,
+    compute_disruption_stats,
     split_labors_by_freeze_cutoff,
     strip_assignment_columns,
 )
@@ -39,6 +40,7 @@ class ReactAlgoConfig:
     precompute_distances: bool = True
     max_iterations_by_city: Optional[Dict[Any, int]] = None
     log_progress: bool = False
+    minimize_disruption: bool = False      # when True, prefer solutions that change fewer driver assignments
 
 
 class ReactAlgorithm(OfflineAlgorithm):
@@ -77,7 +79,77 @@ class ReactAlgorithm(OfflineAlgorithm):
             precompute_distances=bool(params.get("precompute_distances", True)),
             max_iterations_by_city=max_iterations,
             log_progress=bool(params.get("log_progress", False)),
+            minimize_disruption=bool(params.get("minimize_disruption", False)),
         )
+
+    # ------------------------------------------------------------------
+    # Incumbent selection (disruption-aware override)
+    # ------------------------------------------------------------------
+
+    def _select_best_iteration(self, df_results: pd.DataFrame) -> int:
+        """
+        Override of OfflineAlgorithm._select_best_iteration.
+
+        When ``minimize_disruption=False`` (default): delegates to the parent —
+        identical behaviour, no regression.
+
+        When ``minimize_disruption=True``: applies a 3-level lexicographic
+        selection:
+
+        1. Maximize ``labor_count``        — service coverage (always primary)
+        2. Minimize ``driver_changed_count`` — fewest reassignments that changed driver
+        3. Minimize ``total_distance``     — distance as final tiebreaker
+
+        The disruption score is read from each iteration's ``results`` DataFrame
+        (the ``"results"`` key in each df_results row) by comparing
+        ``assigned_driver`` against ``original_assigned_driver``.
+        """
+        if not self.config.minimize_disruption:
+            return super()._select_best_iteration(df_results)
+
+        if df_results is None or df_results.empty:
+            raise ValueError("No iteration results to select from")
+
+        df = df_results.copy()
+        if "success" in df.columns:
+            df = df[df["success"]]
+        if df.empty:
+            return int(df_results.index[0])
+
+        def _score(row: Any) -> Tuple[int, int, float]:
+            moves_df = row.get("moves")
+            results_df = row.get("results")
+
+            labor_count = 0
+            total_dist = float("inf")
+            if isinstance(moves_df, pd.DataFrame) and not moves_df.empty:
+                if "labor_id" in moves_df.columns:
+                    labor_count = int(moves_df["labor_id"].nunique())
+                if "driver_distance" in moves_df.columns:
+                    total_dist = float(moves_df["driver_distance"].sum())
+                elif "distance_km" in moves_df.columns:
+                    total_dist = float(moves_df["distance_km"].sum())
+
+            disruption = compute_disruption_stats(results_df)
+            driver_changed = disruption["driver_changed_count"]
+
+            return labor_count, driver_changed, total_dist
+
+        scores = df.apply(_score, axis=1)
+        df = df.assign(
+            labor_count=[s[0] for s in scores],
+            driver_changed_count=[s[1] for s in scores],
+            total_distance=[s[2] for s in scores],
+        )
+
+        max_labors = df["labor_count"].max()
+        best = df[df["labor_count"] == max_labors]
+
+        min_changed = best["driver_changed_count"].min()
+        best = best[best["driver_changed_count"] == min_changed]
+
+        best_idx = best["total_distance"].astype(float).idxmin()
+        return int(best_idx)
 
     # ------------------------------------------------------------------
     # Main entry point
@@ -153,6 +225,8 @@ class ReactAlgorithm(OfflineAlgorithm):
                 frozen_count=len(frozen_labors),
                 reassigned_count=0,
                 new_count=len(df),
+                driver_changed_count=0,
+                reassignable_with_prior_driver=0,
             )
             return results_df, metrics, {"moves_df": moves_df, "distance_method": self.config.distance_method}
 
@@ -255,6 +329,9 @@ class ReactAlgorithm(OfflineAlgorithm):
         results_df = pd.concat(all_results, ignore_index=True) if all_results else pd.DataFrame()
         moves_df   = pd.concat(all_moves,   ignore_index=True) if all_moves   else pd.DataFrame()
 
+        # ---- Disruption stats (from re-optimized labors only, not frozen) ----
+        disruption = compute_disruption_stats(new_results_df)
+
         metrics = self._build_metrics(
             t0,
             cities_processed=len(cities),
@@ -263,6 +340,8 @@ class ReactAlgorithm(OfflineAlgorithm):
             frozen_count=len(frozen_labors),
             reassigned_count=len(reassignable_labors),
             new_count=len(df),
+            driver_changed_count=disruption["driver_changed_count"],
+            reassignable_with_prior_driver=disruption["reassignable_with_prior_driver"],
         )
 
         artifacts = {
@@ -288,17 +367,26 @@ class ReactAlgorithm(OfflineAlgorithm):
         frozen_count: int,
         reassigned_count: int,
         new_count: int,
+        driver_changed_count: int = 0,
+        reassignable_with_prior_driver: int = 0,
     ) -> Dict[str, Any]:
         return {
-            "algorithm":               self.name,
-            "elapsed_seconds":         perf_counter() - t0,
-            "cities_processed":        cities_processed,
-            "postponed_labors_count":  postponed,
-            "moves_rows":              len(moves_df) if hasattr(moves_df, "__len__") else None,
-            "frozen_labors_count":     frozen_count,
-            "reassigned_labors_count": reassigned_count,
-            "new_labors_count":        new_count,
-            "time_previous_freeze":    self.config.time_previous_freeze,
+            "algorithm":                      self.name,
+            "elapsed_seconds":                perf_counter() - t0,
+            "cities_processed":               cities_processed,
+            "postponed_labors_count":         postponed,
+            "moves_rows":                     len(moves_df) if hasattr(moves_df, "__len__") else None,
+            "frozen_labors_count":            frozen_count,
+            "reassigned_labors_count":        reassigned_count,
+            "new_labors_count":               new_count,
+            "time_previous_freeze":           self.config.time_previous_freeze,
+            "driver_changed_count":           driver_changed_count,
+            "reassignable_with_prior_driver": reassignable_with_prior_driver,
+            "disruption_rate": (
+                round(driver_changed_count / reassignable_with_prior_driver, 4)
+                if reassignable_with_prior_driver > 0 else 0.0
+            ),
+            "minimize_disruption":            self.config.minimize_disruption,
         }
 
     def _validate_preconditions(self, df: pd.DataFrame) -> None:
