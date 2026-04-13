@@ -71,6 +71,7 @@ class Config:
 
     REQUEST_TIMEOUT: int = int(os.getenv("REQUEST_TIMEOUT", "30"))
     API_MAX_RETRIES: int = int(os.getenv("API_MAX_RETRIES", "3"))
+    SUBPROCESS_TIMEOUT: int = int(os.getenv("SUBPROCESS_TIMEOUT", "180"))
 
     # --------------------------------------------------
     # Execution Mode
@@ -148,6 +149,9 @@ class Config:
                 raise RuntimeError("USE_API=true but API_TOKEN is not set")
         if cls.REQUEST_TIMEOUT <= 0:
             raise RuntimeError("REQUEST_TIMEOUT must be a positive integer")
+
+        if cls.SUBPROCESS_TIMEOUT <= 0:
+            raise RuntimeError("SUBPROCESS_TIMEOUT must be a positive integer")
 
         if not cls.DISABLE_FILE_OUTPUT and not cls.RUNS_DIR.strip():
             raise RuntimeError("RUNS_DIR must not be empty")
