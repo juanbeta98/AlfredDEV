@@ -34,6 +34,8 @@ from typing import Any
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
+from alfred.config import Config
+
 app = FastAPI(title="Alfred API", version="1.0")
 
 
@@ -62,7 +64,7 @@ async def run(request: Request) -> JSONResponse:
                 ["alfred", "--request", tmp_path],
                 capture_output=True,
                 text=True,
-                timeout=180,
+                timeout=Config.SUBPROCESS_TIMEOUT,
             )
         except subprocess.TimeoutExpired:
             elapsed = time.monotonic() - t0
@@ -70,7 +72,7 @@ async def run(request: Request) -> JSONResponse:
                 content={
                     "exit_code": -1,
                     "stdout": "",
-                    "stderr": "alfred subprocess timed out after 180s",
+                    "stderr": f"alfred subprocess timed out after {Config.SUBPROCESS_TIMEOUT}s",
                     "elapsed_seconds": round(elapsed, 3),
                     "result": None,
                 }

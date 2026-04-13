@@ -155,6 +155,7 @@ OSRM_URL=http://osrm:5000/route/v1/driving/
 # ----------------------------------------------------------
 # ALFRED_SOLVER_TIMEOUT=600
 # ALFRED_PROBE_TIMEOUT=60
+# SUBPROCESS_TIMEOUT=180
 
 # ----------------------------------------------------------
 # OPTIONAL: Output file generation
