@@ -104,7 +104,7 @@ class InsertAlgoConfig:
     """Configuration for the INSERT algorithm."""
     optimization_obj: Optional[str] = None
     distance_method: str = DEFAULT_DISTANCE_METHOD
-    time_method: str = "speed_based"   # "speed_based" | "osrm_times"
+    time_method: str = "osrm_times"    # "speed_based" | "osrm_times"
     n_processes: Optional[int] = None
     precompute_distances: bool = True  # use OSRM Table API to batch-compute all distances before iterations
     log_progress: bool = False  # show tqdm bar per city; set via request.json algorithm.params.log_progress
@@ -133,7 +133,7 @@ class InsertAlgorithm(OptimizationAlgorithm):
         self.config = InsertAlgoConfig(
             optimization_obj=params.get("optimization_obj"),
             distance_method=params.get("distance_method") or DEFAULT_DISTANCE_METHOD,
-            time_method=params.get("time_method", "speed_based"),
+            time_method=params.get("time_method", "osrm_times"),
             n_processes=_resolve_n_processes(params.get("n_processes")),
             precompute_distances=bool(params.get("precompute_distances", True)),
             log_progress=bool(params.get("log_progress", False)),
