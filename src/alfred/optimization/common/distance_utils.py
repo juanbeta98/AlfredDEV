@@ -282,7 +282,14 @@ def travel_time_minutes(
             d_km = dist_dict.get((p1, p2), float("nan"))
             return d_km, t_min, dist_dict, time_dict
 
-        # --- cache miss: call OSRM /route and extract both distance and duration ---
+        # If a precomputed time_dict was supplied but the pair is missing, do NOT fall back
+        # to a live OSRM call — the matrix is supposed to be complete and a live call here
+        # would negate the entire batch-precompute optimisation.
+        if time_dict:
+            d_km = dist_dict.get((p1, p2), float("nan"))
+            return d_km, float("nan"), dist_dict, time_dict
+
+        # --- cache miss with no precomputed dict: call OSRM /route ---
         osrm_url = kwargs.get("osrm_url") or os.environ.get("OSRM_URL")
         lon1, lat1 = parse_point(p1)
         lon2, lat2 = parse_point(p2)
