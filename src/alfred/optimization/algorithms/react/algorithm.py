@@ -35,7 +35,7 @@ class ReactAlgoConfig:
     """
     time_previous_freeze: int = 0          # minutes; 0 = only truly active labors are frozen
     distance_method: str = DEFAULT_DISTANCE_METHOD
-    time_method: str = "speed_based"       # "speed_based" | "osrm_times"
+    time_method: str = "osrm_times"        # "speed_based" | "osrm_times"
     n_processes: Optional[int] = None
     precompute_distances: bool = True
     max_iterations_by_city: Optional[Dict[Any, int]] = None
@@ -74,7 +74,7 @@ class ReactAlgorithm(OfflineAlgorithm):
         self.config = ReactAlgoConfig(
             time_previous_freeze=int(params.get("time_previous_freeze", 0)),
             distance_method=params.get("distance_method") or DEFAULT_DISTANCE_METHOD,
-            time_method=params.get("time_method", "speed_based"),
+            time_method=params.get("time_method", "osrm_times"),
             n_processes=_resolve_n_processes(params.get("n_processes")),
             precompute_distances=bool(params.get("precompute_distances", True)),
             max_iterations_by_city=max_iterations,

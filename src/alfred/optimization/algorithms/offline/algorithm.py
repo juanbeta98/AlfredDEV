@@ -89,7 +89,7 @@ class OfflineAlgoConfig:
     Keep this minimal and expand as you migrate experiment knobs.
     """
     distance_method: str = DEFAULT_DISTANCE_METHOD
-    time_method: str = "speed_based"   # "speed_based" | "osrm_times"
+    time_method: str = "osrm_times"    # "speed_based" | "osrm_times"
     n_processes: Optional[int] = None
     precompute_distances: bool = True  # use OSRM Table API to batch-compute all distances before iterations
     max_iterations_by_city: Optional[Dict[Any, int]] = None  # city_key -> max_iter
@@ -114,7 +114,7 @@ class OfflineAlgorithm(OptimizationAlgorithm):
         max_iterations = params.get("max_iterations")
         self.config = OfflineAlgoConfig(
             distance_method=params.get("distance_method") or DEFAULT_DISTANCE_METHOD,
-            time_method=params.get("time_method", "speed_based"),
+            time_method=params.get("time_method", "osrm_times"),
             n_processes=_resolve_n_processes(params.get("n_processes")),
             precompute_distances=bool(params.get("precompute_distances", True)),
             max_iterations_by_city=max_iterations,
@@ -474,7 +474,7 @@ def _run_single_iteration(args: Dict[str, Any]) -> Dict[str, Any]:
         city_key=city_key,
         dist_method=args.get("distance_method"),
         dist_dict=args.get("dist_dict"),
-        time_method=args.get("time_method", "speed_based"),
+        time_method=args.get("time_method", "osrm_times"),
         time_dict=args.get("time_dict"),
         alpha=args.get("alpha", 1),
         iter_idx=args.get("iter_idx", 0),
