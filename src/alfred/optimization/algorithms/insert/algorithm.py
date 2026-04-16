@@ -307,6 +307,7 @@ class InsertAlgorithm(OptimizationAlgorithm):
                         time_dict = _precomp_time
                         merged_time_dict.update(time_dict)
                         merged_dist_dict[city_key] = dist_dict
+                        dist_method = "precalced"   # matrix is warm — workers must not fall back to HTTP calls
                         logger.info(
                             "osrm_precompute city=%s unique_points=%d pairs=%d time_pairs=%d",
                             city_key, len(_all_points), len(_precomp_dist), len(_precomp_time),
