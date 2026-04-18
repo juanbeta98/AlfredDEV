@@ -291,12 +291,18 @@ class InsertAlgorithm(OptimizationAlgorithm):
                     )
                     _labor_starts = _all_labors["map_start_point"].dropna().unique().tolist()
                     _labor_ends   = _all_labors["map_end_point"].dropna().unique().tolist()
+                    # Also include move-level start_point/end_point from the preassigned
+                    # schedule — the worker queries these directly when evaluating whether
+                    # downstream labors remain feasible after an insertion.
+                    _move_starts = city_base_moves["start_point"].dropna().unique().tolist() if not city_base_moves.empty else []
+                    _move_ends   = city_base_moves["end_point"].dropna().unique().tolist() if not city_base_moves.empty else []
                     _all_points = list(dict.fromkeys(
-                        _driver_positions + _labor_starts + _labor_ends
+                        _driver_positions + _labor_starts + _labor_ends + _move_starts + _move_ends
                     ))
                     logger.debug(
-                        "osrm_precompute_points city=%s drivers=%d labor_starts=%d labor_ends=%d unique_total=%d",
-                        city_key, len(_driver_positions), len(_labor_starts), len(_labor_ends), len(_all_points),
+                        "osrm_precompute_points city=%s drivers=%d labor_starts=%d labor_ends=%d move_pts=%d unique_total=%d",
+                        city_key, len(_driver_positions), len(_labor_starts), len(_labor_ends),
+                        len(_move_starts) + len(_move_ends), len(_all_points),
                     )
                     _precomp_dist, _precomp_time = batch_distance_matrix(
                         _all_points, _all_points, _osrm_url,
@@ -307,6 +313,7 @@ class InsertAlgorithm(OptimizationAlgorithm):
                         time_dict = _precomp_time
                         merged_time_dict.update(time_dict)
                         merged_dist_dict[city_key] = dist_dict
+                        dist_method = "precalced"   # matrix is warm — workers must not fall back to HTTP calls
                         logger.info(
                             "osrm_precompute city=%s unique_points=%d pairs=%d time_pairs=%d",
                             city_key, len(_all_points), len(_precomp_dist), len(_precomp_time),
