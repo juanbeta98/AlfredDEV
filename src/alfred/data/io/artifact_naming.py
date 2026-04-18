@@ -111,6 +111,7 @@ def finalize_run_manifest(
     instance_config: Optional[dict] = None,
     algorithm_config: Optional[dict] = None,
     timezone_name: Optional[str] = None,
+    extra_fields: Optional[dict] = None,
 ) -> Path:
     """
     Update run.json with finish time and pipeline summary.
@@ -155,6 +156,9 @@ def finalize_run_manifest(
 
     if algorithm_config:
         manifest["algorithm"] = algorithm_config
+
+    if extra_fields:
+        manifest.update(extra_fields)
 
     manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False))
     return manifest_path

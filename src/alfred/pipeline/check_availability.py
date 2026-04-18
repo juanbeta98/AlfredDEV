@@ -101,15 +101,19 @@ import logging
 import os
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 from alfred.config import Config
-from alfred.availability import check_availability
 from alfred.availability.exceptions import LicenseError
-from alfred.availability.models import AvailabilityResponse, LaborRequest, ServiceRequest
+from alfred.availability.models import AvailabilityResponse, LaborRequest, ServiceRequest, TimeSlotResult
+from alfred.availability.pico_placa import extract_plate_digit, is_plate_restricted
 from alfred.availability.request_parser import parse_api_request
+from alfred.availability.schedule_loader import load_schedule_state
+from alfred.availability.slot_scanner import scan_availability
+from alfred.data.io.artifact_naming import build_run_subdir, finalize_run_manifest, write_run_manifest
+from alfred.optimization.settings.solver_settings import OptimizationSettings
 
 logger = logging.getLogger(__name__)
 
@@ -123,29 +127,132 @@ def run(data: Dict[str, Any]) -> Dict[str, Any]:
     Run the availability check for a pre-loaded request dict.
 
     Returns the serialized response dict (same shape as the JSON output).
-    Raises on unrecoverable errors so the caller can handle them.
+    Each stage is timed individually; results are written to a run directory
+    under Config.RUNS_DIR (unless Config.DISABLE_FILE_OUTPUT is set).
     """
     Config.validate()
     Config.configure_logging()
     _validate_license()
 
     department = data.get("department_name") or data.get("department_code") or None
+    run_id = str(data.get("service_id") or data.get("department_id") or "local")
+
+    run_dir: Optional[Path] = None
+    started_at = datetime.now(timezone.utc)
+    if not Config.DISABLE_FILE_OUTPUT:
+        run_dir = Path(Config.RUNS_DIR) / build_run_subdir(run_id)
+        run_dir.mkdir(parents=True, exist_ok=True)
+        write_run_manifest(run_dir, run_id, created_at=started_at)
+
+    stage_timings: Dict[str, Any] = {}
+    t_total = time.perf_counter()
 
     try:
         request = _parse_request(data)
     except (KeyError, ValueError, TypeError) as exc:
         logger.error("Invalid request format: %s", exc)
-        return _error_dict(str(exc))
+        result = _error_dict(str(exc))
+        _finalize_and_write(run_dir, result, "error", time.perf_counter() - t_total, stage_timings)
+        return result
 
-    t0 = time.perf_counter()
+    # --- Stage 1: pico_y_placa_check ---
+    _t = time.perf_counter()
+    plate = request.license_plate
+    pico_blocked = False
+    if plate is not None:
+        digit = extract_plate_digit(plate)
+        if digit is not None:
+            pico_blocked = is_plate_restricted(digit, request.department_code, request.desired_slot.date())
+        else:
+            logger.warning(
+                "pico_y_placa_invalid_plate service_id=%s plate=%r — skipping restriction check",
+                request.service_id, plate,
+            )
+    stage_timings["pico_y_placa_check"] = round(time.perf_counter() - _t, 3)
+
+    if pico_blocked:
+        logger.info(
+            "pico_y_placa_restricted service_id=%s dept=%s plate=%s date=%s",
+            request.service_id, request.department_code, plate, request.desired_slot.date(),
+        )
+        response = AvailabilityResponse(
+            service_id=request.service_id,
+            desired_slot_result=TimeSlotResult(
+                slot_time=request.desired_slot,
+                feasible=False,
+                reason="pico_y_placa",
+            ),
+            feasible_slots=[],
+            scan_performed=False,
+            total_slots_checked=1,
+            schedule_date_str=str(request.desired_slot.date()),
+        )
+        elapsed = time.perf_counter() - t_total
+        result = _serialize_response(response, department, round(elapsed, 3))
+        _finalize_and_write(run_dir, result, "success", elapsed, stage_timings)
+        return result
+
+    # --- Stage 2: schedule_load (sub-staged inside load_schedule_state) ---
     try:
-        response = check_availability(request)
+        settings = OptimizationSettings(algorithm="INSERT")
+        state, schedule_sub_timings = load_schedule_state(
+            department_code=request.department_code,
+            schedule_date=request.desired_slot.date(),
+            settings=settings,
+        )
+    except Exception as exc:
+        logger.exception("availability_schedule_load_failed")
+        stage_timings["schedule_load"] = {}
+        result = _error_dict(str(exc))
+        _finalize_and_write(run_dir, result, "error", time.perf_counter() - t_total, stage_timings)
+        return result
+    stage_timings["schedule_load"] = schedule_sub_timings
+
+    # --- Stage 3: desired_slot_probe / slot_scan ---
+    _t = time.perf_counter()
+    try:
+        response = scan_availability(request, state)
     except Exception as exc:
         logger.exception("availability_check_failed")
-        return _error_dict(str(exc))
-    elapsed_seconds = round(time.perf_counter() - t0, 3)
+        stage_timings["slot_scan"] = round(time.perf_counter() - _t, 3)
+        result = _error_dict(str(exc))
+        _finalize_and_write(run_dir, result, "error", time.perf_counter() - t_total, stage_timings)
+        return result
 
-    return _serialize_response(response, department, elapsed_seconds)
+    scan_elapsed = round(time.perf_counter() - _t, 3)
+    stage_timings["slot_scan" if response.scan_performed else "desired_slot_probe"] = scan_elapsed
+
+    elapsed = time.perf_counter() - t_total
+    result = _serialize_response(response, department, round(elapsed, 3))
+    _finalize_and_write(run_dir, result, "success", elapsed, stage_timings)
+    return result
+
+
+def _finalize_and_write(
+    run_dir: Optional[Path],
+    result: Dict[str, Any],
+    status: str,
+    elapsed_seconds: float,
+    stage_timings: Dict[str, Any],
+) -> None:
+    """Write output_payload.json and finalize run.json. Silently skips if file output is disabled."""
+    if Config.DISABLE_FILE_OUTPUT or run_dir is None:
+        return
+    try:
+        out_dir = run_dir / "output"
+        out_dir.mkdir(exist_ok=True)
+        with (out_dir / "output_payload.json").open("w", encoding="utf-8") as f:
+            json.dump(result, f, indent=2, ensure_ascii=False, default=str)
+        logger.info("local_output_saved artifact=output_payload_json")
+        result_type = (result.get("data") or {}).get("result")
+        finalize_run_manifest(
+            run_dir,
+            status=status,
+            duration_seconds=elapsed_seconds,
+            extra_fields={"result": result_type, "stage_timings_seconds": stage_timings},
+        )
+    except Exception:
+        logger.exception("check_availability_run_dir_write_failed")
 
 
 def main() -> int:
