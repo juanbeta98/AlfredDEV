@@ -20,13 +20,30 @@ In feasibility_probe.py (AlfredProd), the import is swapped to:
 
 So probe_slot() and all callers remain completely unchanged.
 
+It also exposes run_batch_probe_bridge for Phase 2 slot scanning, which
+serializes all slot candidates into a single binary invocation instead of
+spawning one process per slot:
+
+    results = run_batch_probe_bridge(
+        candidates=[new_labors_df_slot0, new_labors_df_slot1, ...],
+        base_labors_df=..., base_moves_df=..., city=..., fecha=...,
+        directorio_df=..., drivers=..., dist_dict=..., distance_method=...,
+        alfred_speed=..., vehicle_transport_speed=..., tiempo_alistar=...,
+        tiempo_finalizacion=..., tiempo_gracia=..., early_buffer=...,
+        workday_end_dt=..., duraciones_df=..., time_method=..., time_dict=...,
+    )
+    # returns List[Dict] — [{slot_index, num_inserted}, ...] one per candidate
+
 Configuration (via environment variables):
-    ALFRED_SOLVER_BIN     Path to the alfred_solver binary.
-                          Default: bin/alfred_solver (relative to repo root).
-    ALFRED_PROBE_TIMEOUT  Subprocess timeout in seconds for a single probe.
-                          Default: 60 (probes are fast; use a tighter budget).
-    ALFRED_LICENSE        Path to the license file issued for this deployment.
-                          Required — the binary will exit with code 5 if absent.
+    ALFRED_SOLVER_BIN           Path to the alfred_solver binary.
+                                Default: bin/alfred_solver (relative to repo root).
+    ALFRED_PROBE_TIMEOUT        Subprocess timeout in seconds for a single probe.
+                                Default: 60.
+    ALFRED_BATCH_PROBE_TIMEOUT  Subprocess timeout in seconds for a batch probe.
+                                Default: 300 (5 min — covers a full day's worth of
+                                slots without being as tight as a single probe).
+    ALFRED_LICENSE              Path to the license file issued for this deployment.
+                                Required — the binary will exit with code 5 if absent.
 """
 
 from __future__ import annotations
@@ -63,6 +80,10 @@ def _solver_bin() -> Path:
 
 def _probe_timeout() -> float:
     return float(os.environ.get("ALFRED_PROBE_TIMEOUT", "60"))
+
+
+def _batch_probe_timeout() -> float:
+    return float(os.environ.get("ALFRED_BATCH_PROBE_TIMEOUT", "300"))
 
 
 def _license_path() -> Optional[str]:
@@ -231,6 +252,176 @@ def _run_probe(tmpdir: Path, **kwargs) -> Dict[str, Any]:
         kwargs.get("city"),
     )
     return result
+
+
+# ---------------------------------------------------------------------------
+# Batch probe — one binary launch for all Phase 2 slot candidates
+# ---------------------------------------------------------------------------
+
+def run_batch_probe_bridge(
+    candidates: List[pd.DataFrame],
+    *,
+    base_labors_df: pd.DataFrame,
+    base_moves_df: pd.DataFrame,
+    city: str,
+    fecha: str,
+    directorio_df: pd.DataFrame,
+    drivers: List[str],
+    dist_dict: Dict[Any, Any],
+    distance_method: str,
+    alfred_speed: float,
+    vehicle_transport_speed: float,
+    tiempo_alistar: float,
+    tiempo_finalizacion: float,
+    tiempo_gracia: float,
+    early_buffer: float,
+    workday_end_dt,
+    duraciones_df: Optional[pd.DataFrame] = None,
+    time_method: str = "speed_based",
+    time_dict: Optional[Dict[Any, Any]] = None,
+) -> List[Dict[str, Any]]:
+    """
+    Run feasibility probes for all slot candidates in a single binary launch.
+
+    Serializes all candidate new_labors_df DataFrames alongside the shared base
+    schedule into one batch_probe_input.json, invokes alfred_solver once with
+    --mode batch_probe, and returns a list of {slot_index, num_inserted} dicts
+    in the same order as the input candidates list.
+
+    Args:
+        candidates      : List of new_labors_df DataFrames, one per slot to probe.
+        All other kwargs: Shared base schedule and model parameters — identical
+                          to the run_insertion_worker_bridge signature minus
+                          new_labors_df and seed (seed is always 0 per slot).
+
+    Returns:
+        List[Dict] with keys {slot_index, num_inserted}, one entry per candidate.
+
+    Raises:
+        ProbeBridgeError: If the binary fails, times out, or produces no output.
+    """
+    if not candidates:
+        return []
+
+    tmpdir = Path(tempfile.mkdtemp(prefix="alfred_batch_probe_"))
+    try:
+        return _run_batch_probe(
+            tmpdir=tmpdir,
+            candidates=candidates,
+            base_labors_df=base_labors_df,
+            base_moves_df=base_moves_df,
+            city=city,
+            fecha=fecha,
+            directorio_df=directorio_df,
+            drivers=drivers,
+            dist_dict=dist_dict,
+            distance_method=distance_method,
+            alfred_speed=alfred_speed,
+            vehicle_transport_speed=vehicle_transport_speed,
+            tiempo_alistar=tiempo_alistar,
+            tiempo_finalizacion=tiempo_finalizacion,
+            tiempo_gracia=tiempo_gracia,
+            early_buffer=early_buffer,
+            workday_end_dt=workday_end_dt,
+            duraciones_df=duraciones_df,
+            time_method=time_method,
+            time_dict=time_dict,
+        )
+    finally:
+        try:
+            shutil.rmtree(tmpdir)
+        except Exception as exc:
+            logger.warning("probe_bridge: failed to clean batch tmpdir %s: %s", tmpdir, exc)
+
+
+def _run_batch_probe(tmpdir: Path, *, candidates: List[pd.DataFrame], **kwargs) -> List[Dict[str, Any]]:
+    from alfred.optimization.solver_serde import (
+        serialize_batch_probe_input,
+        deserialize_batch_probe_output,
+    )
+
+    solver_bin = _solver_bin()
+    timeout = _batch_probe_timeout()
+
+    if not solver_bin.exists():
+        raise ProbeBridgeError(
+            f"alfred_solver binary not found at {solver_bin}. "
+            "Set ALFRED_SOLVER_BIN or install the binary to bin/alfred_solver."
+        )
+
+    license = _license_path()
+
+    input_json = serialize_batch_probe_input(tmpdir, candidates=candidates, **kwargs)
+    log_file = tmpdir / "batch_probe.log"
+
+    cmd = [
+        str(solver_bin),
+        "--mode", "batch_probe",
+        str(input_json),
+        str(tmpdir),
+        "--log-file", str(log_file),
+        "--log-level", "WARNING",
+    ]
+    if license:
+        cmd += ["--license", license]
+
+    logger.debug(
+        "probe_bridge: launching batch_probe city=%s fecha=%s candidates=%d",
+        kwargs.get("city"),
+        kwargs.get("fecha"),
+        len(candidates),
+    )
+
+    try:
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        raise ProbeBridgeError(
+            f"alfred_solver batch_probe timed out after {timeout}s "
+            f"(city={kwargs.get('city')}, fecha={kwargs.get('fecha')}, candidates={len(candidates)})"
+        )
+
+    if proc.stderr.strip():
+        lines = proc.stderr.strip().splitlines()
+        for line in lines[:20]:
+            logger.warning("batch_probe_stderr | %s", line)
+        if len(lines) > 20:
+            logger.warning("batch_probe_stderr | ... (%d more lines suppressed)", len(lines) - 20)
+
+    if proc.returncode == 5:
+        raise ProbeBridgeError(
+            f"alfred_solver rejected the license file at '{license}'. "
+            "Check that the file exists, is not expired, and was issued for this deployment."
+        )
+    if proc.returncode != 0:
+        raise ProbeBridgeError(
+            f"alfred_solver batch_probe exited with code {proc.returncode} "
+            f"(city={kwargs.get('city')}, fecha={kwargs.get('fecha')})"
+        )
+
+    output_json_str = proc.stdout.strip()
+    if not output_json_str:
+        raise ProbeBridgeError("alfred_solver batch_probe produced no output path on stdout")
+
+    output_json = Path(output_json_str)
+    if not output_json.exists():
+        raise ProbeBridgeError(
+            f"alfred_solver batch_probe reported output path {output_json} but it does not exist"
+        )
+
+    results = deserialize_batch_probe_output(output_json)
+
+    logger.debug(
+        "probe_bridge: batch_probe done candidates=%d feasible=%d city=%s",
+        len(candidates),
+        sum(1 for r in results if r.get("num_inserted", 0) > 0),
+        kwargs.get("city"),
+    )
+    return results
 
 
 # ---------------------------------------------------------------------------

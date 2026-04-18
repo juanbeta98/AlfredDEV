@@ -165,6 +165,68 @@ def _run_probe(input_json: Path, output_dir: Path) -> Path:
 
 
 # ---------------------------------------------------------------------------
+# Mode: batch_probe
+# ---------------------------------------------------------------------------
+
+def _run_batch_probe(input_json: Path, output_dir: Path) -> Path:
+    """
+    Deserialize N candidate slots, run run_insertion_worker sequentially for
+    each, serialize a compact output listing num_inserted per slot.
+
+    This amortizes the binary cold-start cost across all Phase 2 slot probes
+    in a single check_availability scan — instead of N subprocess launches,
+    the bridge makes exactly one.
+
+    Returns path to batch_probe_output.json.
+    """
+    from solver_executable.serde import (
+        deserialize_batch_probe_input,
+        serialize_batch_probe_output,
+    )
+
+    logger.info("batch_probe: deserializing input from %s", input_json)
+    try:
+        per_candidate_kwargs, shared_kwargs = deserialize_batch_probe_input(input_json)
+    except Exception as exc:
+        logger.exception("batch_probe: deserialization failed")
+        raise _DeserializeError(str(exc)) from exc
+
+    n = len(per_candidate_kwargs)
+    logger.info(
+        "batch_probe: city=%s fecha=%s candidates=%d",
+        shared_kwargs.get("city"),
+        shared_kwargs.get("fecha"),
+        n,
+    )
+
+    results = []
+    try:
+        from alfred.optimization.algorithms.insert.insert_algorithms import run_insertion_worker
+        for i, kwargs in enumerate(per_candidate_kwargs):
+            result = run_insertion_worker(**kwargs)
+            num_inserted = result.get("num_inserted", 0) if result else 0
+            logger.debug("batch_probe: slot=%d num_inserted=%d", i, num_inserted)
+            results.append(result if result is not None else {"num_inserted": 0})
+    except Exception as exc:
+        logger.exception("batch_probe: run_insertion_worker failed")
+        raise _SolverError(str(exc)) from exc
+
+    logger.info(
+        "batch_probe: completed candidates=%d feasible=%d",
+        n,
+        sum(1 for r in results if r.get("num_inserted", 0) > 0),
+    )
+
+    try:
+        output_json = serialize_batch_probe_output(output_dir, results)
+    except Exception as exc:
+        logger.exception("batch_probe: output serialization failed")
+        raise _SerializeError(str(exc)) from exc
+
+    return output_json
+
+
+# ---------------------------------------------------------------------------
 # Mode: health
 # ---------------------------------------------------------------------------
 
@@ -205,9 +267,9 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--mode",
-        choices=["solve", "probe", "health"],
+        choices=["solve", "probe", "batch_probe", "health"],
         required=True,
-        help="Execution mode: 'solve', 'probe', or 'health' (self-test, no data needed).",
+        help="Execution mode: 'solve', 'probe', 'batch_probe', or 'health' (self-test, no data needed).",
     )
     parser.add_argument(
         "input_json",
@@ -274,7 +336,7 @@ def main() -> int:
     output_dir: Path = args.output_dir
 
     if input_json is None or output_dir is None:
-        logger.error("input_json and output_dir are required for --mode solve/probe")
+        logger.error("input_json and output_dir are required for --mode solve/probe/batch_probe")
         return 1
     if not input_json.exists():
         logger.error("Input file does not exist: %s", input_json)
@@ -289,8 +351,10 @@ def main() -> int:
     try:
         if args.mode == "solve":
             output_json = _run_solve(input_json, output_dir)
-        else:
+        elif args.mode == "probe":
             output_json = _run_probe(input_json, output_dir)
+        else:
+            output_json = _run_batch_probe(input_json, output_dir)
     except _DeserializeError:
         return 2
     except _SolverError:

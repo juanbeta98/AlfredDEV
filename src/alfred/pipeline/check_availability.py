@@ -100,6 +100,7 @@ import json
 import logging
 import os
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -136,13 +137,15 @@ def run(data: Dict[str, Any]) -> Dict[str, Any]:
         logger.error("Invalid request format: %s", exc)
         return _error_dict(str(exc))
 
+    t0 = time.perf_counter()
     try:
         response = check_availability(request)
     except Exception as exc:
         logger.exception("availability_check_failed")
         return _error_dict(str(exc))
+    elapsed_seconds = round(time.perf_counter() - t0, 3)
 
-    return _serialize_response(response, department)
+    return _serialize_response(response, department, elapsed_seconds)
 
 
 def main() -> int:
@@ -206,7 +209,11 @@ def _parse_request(data: Dict[str, Any]) -> ServiceRequest:
     )
 
 
-def _serialize_response(response: AvailabilityResponse, department: Optional[str]) -> Dict[str, Any]:
+def _serialize_response(
+    response: AvailabilityResponse,
+    department: Optional[str],
+    elapsed_seconds: float = 0.0,
+) -> Dict[str, Any]:
     requested = _fmt_ts(response.desired_slot_result.slot_time)
 
     if response.error:
@@ -219,6 +226,7 @@ def _serialize_response(response: AvailabilityResponse, department: Optional[str
             "department": department,
             "requested_schedule": requested,
             "confirmed_schedule": requested,
+            "elapsed_seconds": elapsed_seconds,
         }}
 
     if not response.feasible_slots:
@@ -229,12 +237,14 @@ def _serialize_response(response: AvailabilityResponse, department: Optional[str
                 "message": "Vehículo restringido por pico y placa para esta fecha",
                 "department": department,
                 "requested_schedule": requested,
+                "elapsed_seconds": elapsed_seconds,
             }}
         return {"data": {
             "result": "occupied",
             "message": "No hay disponibilidad para este día, seleccione otra fecha",
             "department": department,
             "requested_schedule": requested,
+            "elapsed_seconds": elapsed_seconds,
         }}
 
     return {"data": {
@@ -243,6 +253,7 @@ def _serialize_response(response: AvailabilityResponse, department: Optional[str
         "department": department,
         "requested_schedule": requested,
         "available_schedules": [_fmt_ts(s.slot_time) for s in response.feasible_slots],
+        "elapsed_seconds": elapsed_seconds,
     }}
 
 

@@ -41,6 +41,20 @@ Probe mode file layout (tmpdir/):
 
   probe_output.json       — {"num_inserted": N} + file paths
   probe_result.parquet    — result_df from run_insertion_worker
+
+Batch-probe mode file layout (tmpdir/):
+  batch_probe_input.json  — mode, shared probe_params, candidate count, file paths
+  base_labors.parquet     — shared across all candidates
+  base_moves.parquet      — shared across all candidates
+  directorio.parquet      — shared across all candidates
+  dist_dict.parquet       — shared across all candidates
+  duraciones.parquet      — shared (optional)
+  time_dict.parquet       — shared (optional)
+  candidate_0.parquet     — new_labors_df for slot 0
+  candidate_1.parquet     — new_labors_df for slot 1
+  ...
+
+  batch_probe_output.json — {"results": [{slot_index, num_inserted}, ...]}
 """
 
 from __future__ import annotations
@@ -668,3 +682,255 @@ def deserialize_probe_output(
         result["moves"] = pd.DataFrame()
 
     return result
+
+
+# ---------------------------------------------------------------------------
+# Batch-probe mode — serialize input
+# ---------------------------------------------------------------------------
+
+def serialize_batch_probe_input(
+    tmpdir: Path,
+    *,
+    candidates: List[pd.DataFrame],
+    base_labors_df: pd.DataFrame,
+    base_moves_df: pd.DataFrame,
+    city: str,
+    fecha: str,
+    directorio_df: pd.DataFrame,
+    drivers: List[str],
+    dist_dict: Dict[Any, Any],
+    distance_method: str,
+    alfred_speed: float,
+    vehicle_transport_speed: float,
+    tiempo_alistar: float,
+    tiempo_finalizacion: float,
+    tiempo_gracia: float,
+    early_buffer: float,
+    workday_end_dt,
+    duraciones_df: Optional[pd.DataFrame] = None,
+    time_method: str = "speed_based",
+    time_dict: Optional[Dict[Any, Any]] = None,
+) -> Path:
+    """
+    Write batch-probe inputs to tmpdir.  Returns path to batch_probe_input.json.
+
+    Args:
+        tmpdir      : Temp directory (must exist).
+        candidates  : List of new_labors_df DataFrames, one per slot to probe.
+                      Written as candidate_0.parquet, candidate_1.parquet, ...
+        All other kwargs are identical to serialize_probe_input and are shared
+        across all candidates (base schedule, master data, model parameters).
+
+    Returns:
+        Path to batch_probe_input.json.
+    """
+    tmpdir = Path(tmpdir)
+
+    # Shared base files (written once, reused for every candidate)
+    _write_parquet(base_labors_df, tmpdir / "base_labors.parquet")
+    _write_parquet(base_moves_df, tmpdir / "base_moves.parquet")
+    _write_parquet(directorio_df, tmpdir / "directorio.parquet")
+
+    wrapped_dist = {str(city): dist_dict} if dist_dict else {}
+    _write_parquet(_dist_dict_to_df(wrapped_dist), tmpdir / "dist_dict.parquet")
+
+    has_duraciones = False
+    if duraciones_df is not None and not duraciones_df.empty:
+        _write_parquet(duraciones_df, tmpdir / "duraciones.parquet")
+        has_duraciones = True
+
+    has_time_dict = bool(time_dict)
+    if has_time_dict:
+        _write_parquet(_time_dict_to_df(time_dict), tmpdir / "time_dict.parquet")
+
+    # Per-candidate DataFrames
+    candidate_files: List[str] = []
+    for i, cdf in enumerate(candidates):
+        fname = f"candidate_{i}.parquet"
+        _write_parquet(cdf, tmpdir / fname)
+        candidate_files.append(fname)
+
+    workday_end_str = None
+    if workday_end_dt is not None:
+        workday_end_str = pd.Timestamp(workday_end_dt).isoformat()
+
+    probe_params = {
+        "city": city,
+        "fecha": fecha,
+        "drivers": drivers,
+        "distance_method": distance_method,
+        "alfred_speed": alfred_speed,
+        "vehicle_transport_speed": vehicle_transport_speed,
+        "tiempo_alistar": tiempo_alistar,
+        "tiempo_finalizacion": tiempo_finalizacion,
+        "tiempo_gracia": tiempo_gracia,
+        "early_buffer": early_buffer,
+        "workday_end_dt_iso": workday_end_str,
+        "time_method": time_method,
+    }
+
+    envelope = {
+        "serde_version": SERDE_VERSION,
+        "mode": "batch_probe",
+        "probe_params": probe_params,
+        "num_candidates": len(candidates),
+        "has_duraciones": has_duraciones,
+        "has_time_dict": has_time_dict,
+        "candidate_files": candidate_files,
+        "shared_files": {
+            "base_labors": "base_labors.parquet",
+            "base_moves": "base_moves.parquet",
+            "directorio": "directorio.parquet",
+            "dist_dict": "dist_dict.parquet",
+            **({"duraciones": "duraciones.parquet"} if has_duraciones else {}),
+            **({"time_dict": "time_dict.parquet"} if has_time_dict else {}),
+        },
+    }
+
+    input_json = tmpdir / "batch_probe_input.json"
+    input_json.write_text(json.dumps(envelope, indent=2, default=str), encoding="utf-8")
+    return input_json
+
+
+# ---------------------------------------------------------------------------
+# Batch-probe mode — deserialize input
+# ---------------------------------------------------------------------------
+
+def deserialize_batch_probe_input(
+    input_json_path: Path,
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """
+    Read batch-probe inputs written by serialize_batch_probe_input.
+
+    Returns:
+        (per_candidate_kwargs_list, shared_kwargs)
+
+        per_candidate_kwargs_list : list of dicts, each ready to be passed to
+            run_insertion_worker(**kwargs) — only new_labors_df differs per entry.
+        shared_kwargs             : the common kwargs dict (base_labors_df,
+            directorio_df, dist_dict, probe_params scalars, etc.).  Callers
+            can use these directly if they need access to shared state.
+    """
+    input_json_path = Path(input_json_path)
+    envelope = json.loads(input_json_path.read_text(encoding="utf-8"))
+    _check_version(envelope, "batch_probe_input")
+    tmpdir = input_json_path.parent
+    sf = envelope["shared_files"]
+    pp = envelope["probe_params"]
+
+    base_labors_df = _read_parquet(tmpdir / sf["base_labors"])
+    base_moves_df = _read_parquet(tmpdir / sf["base_moves"])
+    directorio_df = _read_parquet(tmpdir / sf["directorio"])
+
+    dist_df = _read_parquet(tmpdir / sf["dist_dict"])
+    full_dist = _df_to_dist_dict(dist_df)
+    city = str(pp["city"])
+    dist_dict = full_dist.get(city)
+    if dist_dict is None:
+        raise ValueError(
+            f"batch_probe dist_dict deserialization error: city {city!r} not found. "
+            f"Available keys: {list(full_dist.keys())}"
+        )
+
+    duraciones_df: Optional[pd.DataFrame] = None
+    if envelope.get("has_duraciones") and "duraciones" in sf:
+        duraciones_df = _read_parquet(tmpdir / sf["duraciones"])
+
+    time_dict: Dict[Any, Any] = {}
+    if envelope.get("has_time_dict") and "time_dict" in sf:
+        time_dict = _df_to_time_dict(_read_parquet(tmpdir / sf["time_dict"]))
+
+    workday_end_dt = None
+    if pp.get("workday_end_dt_iso"):
+        workday_end_dt = pd.Timestamp(pp["workday_end_dt_iso"])
+
+    shared_kwargs: Dict[str, Any] = {
+        "base_labors_df": base_labors_df,
+        "base_moves_df": base_moves_df,
+        "city": city,
+        "fecha": str(pp["fecha"]),
+        "directorio_df": directorio_df,
+        "drivers": list(pp["drivers"]),
+        "dist_dict": dist_dict,
+        "distance_method": str(pp["distance_method"]),
+        "alfred_speed": float(pp["alfred_speed"]),
+        "vehicle_transport_speed": float(pp["vehicle_transport_speed"]),
+        "tiempo_alistar": float(pp["tiempo_alistar"]),
+        "tiempo_finalizacion": float(pp["tiempo_finalizacion"]),
+        "tiempo_gracia": float(pp["tiempo_gracia"]),
+        "early_buffer": float(pp["early_buffer"]),
+        "workday_end_dt": workday_end_dt,
+        "duraciones_df": duraciones_df,
+        "time_method": str(pp.get("time_method", "speed_based")),
+        "time_dict": time_dict,
+    }
+
+    candidate_files: List[str] = envelope["candidate_files"]
+    per_candidate_kwargs: List[Dict[str, Any]] = []
+    for i, fname in enumerate(candidate_files):
+        cdf = _read_parquet(tmpdir / fname)
+        kwargs = dict(shared_kwargs)
+        kwargs["new_labors_df"] = cdf
+        kwargs["seed"] = 0  # deterministic single probe per slot
+        per_candidate_kwargs.append(kwargs)
+
+    return per_candidate_kwargs, shared_kwargs
+
+
+# ---------------------------------------------------------------------------
+# Batch-probe mode — serialize output
+# ---------------------------------------------------------------------------
+
+def serialize_batch_probe_output(
+    tmpdir: Path,
+    results: List[Dict[str, Any]],
+) -> Path:
+    """
+    Write batch-probe output to tmpdir.  Returns path to batch_probe_output.json.
+
+    Args:
+        tmpdir  : Temp directory (must exist).
+        results : List of run_insertion_worker result dicts, one per candidate.
+                  Only num_inserted is preserved (DataFrames are dropped to keep
+                  output compact — callers only need feasibility, not full routes).
+
+    Returns:
+        Path to batch_probe_output.json.
+    """
+    tmpdir = Path(tmpdir)
+
+    compact_results = [
+        {"slot_index": i, "num_inserted": r.get("num_inserted", 0)}
+        for i, r in enumerate(results)
+    ]
+
+    envelope = {
+        "serde_version": SERDE_VERSION,
+        "mode": "batch_probe",
+        "num_candidates": len(results),
+        "results": compact_results,
+    }
+
+    output_json = tmpdir / "batch_probe_output.json"
+    output_json.write_text(json.dumps(envelope, indent=2, default=str), encoding="utf-8")
+    return output_json
+
+
+# ---------------------------------------------------------------------------
+# Batch-probe mode — deserialize output
+# ---------------------------------------------------------------------------
+
+def deserialize_batch_probe_output(
+    output_json_path: Path,
+) -> List[Dict[str, Any]]:
+    """
+    Read batch-probe outputs written by serialize_batch_probe_output.
+
+    Returns:
+        List of dicts with keys {slot_index, num_inserted}, one per candidate,
+        in the same order as the input candidates list.
+    """
+    output_json_path = Path(output_json_path)
+    envelope = json.loads(output_json_path.read_text(encoding="utf-8"))
+    _check_version(envelope, "batch_probe_output")
+    return list(envelope["results"])
