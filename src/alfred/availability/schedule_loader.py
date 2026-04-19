@@ -11,6 +11,7 @@ single availability check run.
 
 import logging
 import os
+import time
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -34,7 +35,7 @@ def load_schedule_state(
     department_code: str,
     schedule_date: date,
     settings: OptimizationSettings,
-) -> ScheduleState:
+) -> tuple[ScheduleState, dict]:
     """
     Fetch the live schedule from the ALFRED API and reconstruct the preassigned
     base for availability probing.
@@ -65,7 +66,10 @@ def load_schedule_state(
             department_code, day_str,
         )
 
+        stage_timings: dict = {}
+
         # 1. Fetch services from API
+        _t = time.perf_counter()
         services_client = ALFREDAPIClient(
             endpoint_url=Config.SERVICES_ENDPOINT,
             api_token=Config.API_TOKEN,
@@ -100,8 +104,10 @@ def load_schedule_state(
             "availability_schedule_parsed rows=%d department=%s date=%s",
             len(input_df), department_code, day_str,
         )
+        stage_timings["fetch_services"] = round(time.perf_counter() - _t, 3)
 
         # 4. Fetch driver directory
+        _t = time.perf_counter()
         driver_client = ALFREDAPIClient(
             endpoint_url=Config.ALFREDS_ENDPOINT,
             api_token=Config.API_TOKEN,
@@ -119,6 +125,7 @@ def load_schedule_state(
             "availability_drivers_loaded drivers=%d department=%s",
             len(driver_directory_df), department_code,
         )
+        stage_timings["fetch_drivers"] = round(time.perf_counter() - _t, 3)
 
         # 5. Load master data; override directorio_df with live driver directory
         master_data = load_master_data(settings.master_data)
@@ -129,6 +136,7 @@ def load_schedule_state(
         )
 
         # 6. Reconstruct preassigned schedule (base for all probes)
+        _t = time.perf_counter()
         base_labors_df = pd.DataFrame()
         base_moves_df = pd.DataFrame()
 
@@ -201,6 +209,7 @@ def load_schedule_state(
                     "availability_preassigned_reconstructed labors=%d department=%s date=%s",
                     len(base_labors_df), department_code, day_str,
                 )
+        stage_timings["reconstruct_preassigned"] = round(time.perf_counter() - _t, 3)
 
         return ScheduleState(
             base_labors_df=base_labors_df,
@@ -209,7 +218,7 @@ def load_schedule_state(
             settings=settings,
             day_str=day_str,
             department_code=department_code,
-        )
+        ), stage_timings
 
     except Exception as exc:
         raise ScheduleLoadError(

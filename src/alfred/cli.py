@@ -63,11 +63,6 @@ def main() -> None:
 
     elif action == "check_availability":
         from alfred.pipeline.check_availability import run as run_availability
-        from alfred.config import Config
-        from alfred.data.io.output_writer import save_local_output_payload
         result = run_availability(request)
         print(json.dumps(result, indent=2, ensure_ascii=False))
-        if not Config.DISABLE_FILE_OUTPUT:
-            run_id = request.get("service_id") or request.get("department_id") or None
-            save_local_output_payload(result, output_dir=Config.RUNS_DIR, run_id=run_id)
         sys.exit(0)
