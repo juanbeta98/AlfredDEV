@@ -115,9 +115,7 @@ def main() -> int:
     else:
         log_info("local_outputs_disabled")
 
-    use_api = Config.USE_API
-    run_mode = "api" if use_api else "local"
-    artifact_run_id = f"{run_mode}-{run_id}"
+    artifact_run_id = f"ass-{run_id}"
     request_id: Optional[str] = None
     request_payload = None
     request_filters = None

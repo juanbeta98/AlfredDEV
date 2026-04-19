@@ -101,6 +101,7 @@ import logging
 import os
 import sys
 import time
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -135,7 +136,7 @@ def run(data: Dict[str, Any]) -> Dict[str, Any]:
     _validate_license()
 
     department = data.get("department_name") or data.get("department_code") or None
-    run_id = str(data.get("service_id") or data.get("department_id") or "local")
+    run_id = f"avail-{uuid.uuid4().hex[:8]}"
 
     run_dir: Optional[Path] = None
     started_at = datetime.now(timezone.utc)
