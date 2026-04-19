@@ -40,7 +40,8 @@ class ReactAlgoConfig:
     precompute_distances: bool = True
     max_iterations_by_city: Optional[Dict[Any, int]] = None
     log_progress: bool = False
-    minimize_disruption: bool = False      # when True, prefer solutions that change fewer driver assignments
+    minimize_disruption: bool = False      # when True, prefer solutions that change fewer driver assignments (lexicographic)
+    disruption_weight: float = 0.0        # when > 0, score = distance × (1 + w × disruption_rate); 0 = no penalty
 
 
 class ReactAlgorithm(OfflineAlgorithm):
@@ -80,6 +81,7 @@ class ReactAlgorithm(OfflineAlgorithm):
             max_iterations_by_city=max_iterations,
             log_progress=bool(params.get("log_progress", False)),
             minimize_disruption=bool(params.get("minimize_disruption", False)),
+            disruption_weight=float(params.get("disruption_weight", 0.0)),
         )
 
     # ------------------------------------------------------------------
@@ -90,21 +92,23 @@ class ReactAlgorithm(OfflineAlgorithm):
         """
         Override of OfflineAlgorithm._select_best_iteration.
 
-        When ``minimize_disruption=False`` (default): delegates to the parent —
-        identical behaviour, no regression.
+        Three modes, selected by config flags (coverage is always a hard filter):
 
-        When ``minimize_disruption=True``: applies a 3-level lexicographic
-        selection:
+        1. Both flags off / disruption_weight=0 → delegate to parent (pure distance, no change).
 
-        1. Maximize ``labor_count``        — service coverage (always primary)
-        2. Minimize ``driver_changed_count`` — fewest reassignments that changed driver
-        3. Minimize ``total_distance``     — distance as final tiebreaker
+        2. minimize_disruption=True (lexicographic):
+           Coverage → min driver_changed_count → min total_distance.
 
-        The disruption score is read from each iteration's ``results`` DataFrame
-        (the ``"results"`` key in each df_results row) by comparing
-        ``assigned_driver`` against ``original_assigned_driver``.
+        3. disruption_weight > 0 (weighted scalarization, takes precedence over mode 2):
+           Coverage → min score, where:
+               score = total_distance × (1 + disruption_weight × disruption_rate)
+           disruption_rate = driver_changed_count / reassignable_with_prior_driver ∈ [0, 1].
+           When disruption_rate=0, score equals total_distance (no penalty).
         """
-        if not self.config.minimize_disruption:
+        use_weighted = self.config.disruption_weight > 0.0
+        use_lexicographic = self.config.minimize_disruption and not use_weighted
+
+        if not use_weighted and not use_lexicographic:
             return super()._select_best_iteration(df_results)
 
         if df_results is None or df_results.empty:
@@ -116,7 +120,7 @@ class ReactAlgorithm(OfflineAlgorithm):
         if df.empty:
             return int(df_results.index[0])
 
-        def _score(row: Any) -> Tuple[int, int, float]:
+        def _score(row: Any) -> Tuple[int, int, float, float]:
             moves_df = row.get("moves")
             results_df = row.get("results")
 
@@ -132,23 +136,31 @@ class ReactAlgorithm(OfflineAlgorithm):
 
             disruption = compute_disruption_stats(results_df)
             driver_changed = disruption["driver_changed_count"]
+            disruption_rate = disruption["disruption_rate"]
 
-            return labor_count, driver_changed, total_dist
+            return labor_count, driver_changed, disruption_rate, total_dist
 
         scores = df.apply(_score, axis=1)
         df = df.assign(
             labor_count=[s[0] for s in scores],
             driver_changed_count=[s[1] for s in scores],
-            total_distance=[s[2] for s in scores],
+            disruption_rate=[s[2] for s in scores],
+            total_distance=[s[3] for s in scores],
         )
 
         max_labors = df["labor_count"].max()
         best = df[df["labor_count"] == max_labors]
 
-        min_changed = best["driver_changed_count"].min()
-        best = best[best["driver_changed_count"] == min_changed]
+        if use_weighted:
+            w = self.config.disruption_weight
+            weighted = best["total_distance"] * (1.0 + w * best["disruption_rate"])
+            best_idx = weighted.astype(float).idxmin()
+        else:
+            # lexicographic: disruption then distance
+            min_changed = best["driver_changed_count"].min()
+            best = best[best["driver_changed_count"] == min_changed]
+            best_idx = best["total_distance"].astype(float).idxmin()
 
-        best_idx = best["total_distance"].astype(float).idxmin()
         return int(best_idx)
 
     # ------------------------------------------------------------------
@@ -387,6 +399,7 @@ class ReactAlgorithm(OfflineAlgorithm):
                 if reassignable_with_prior_driver > 0 else 0.0
             ),
             "minimize_disruption":            self.config.minimize_disruption,
+            "disruption_weight":              self.config.disruption_weight,
         }
 
     def _validate_preconditions(self, df: pd.DataFrame) -> None:
