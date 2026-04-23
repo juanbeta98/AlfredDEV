@@ -481,6 +481,7 @@ def _direct_insertion_empty_driver(
         vehicle_speed=VEHICLE_TRANSPORT_SPEED,
         prep_time=TIEMPO_ALISTAR,
         finish_time=TIEMPO_FINALIZACION,
+        time_dict=time_dict,
         **kwargs,
     )
 
@@ -586,6 +587,7 @@ def _evaluate_and_execute_insertion_before_first_labor(
             vehicle_speed=vehicle_transport_speed,
             prep_time=tiempo_alistar,
             finish_time=tiempo_finalizacion,
+            time_dict=time_dict,
             **kwargs,
         )
     )
@@ -619,6 +621,7 @@ def _evaluate_and_execute_insertion_before_first_labor(
         vehicle_speed=vehicle_transport_speed,
         prep_time=tiempo_alistar,
         finish_time=tiempo_finalizacion,
+        time_dict=time_dict,
         **kwargs,
     )
 
@@ -824,6 +827,7 @@ def evaluate_driver_feasibility(
             vehicle_speed=VEHICLE_TRANSPORT_SPEED,
             prep_time=TIEMPO_ALISTAR,
             finish_time=TIEMPO_FINALIZACION,
+            time_dict=time_dict,
             **kwargs,
         )
 
@@ -857,6 +861,7 @@ def evaluate_driver_feasibility(
             vehicle_speed=VEHICLE_TRANSPORT_SPEED,
             prep_time=TIEMPO_ALISTAR,
             finish_time=TIEMPO_FINALIZACION,
+            time_dict=time_dict,
             **kwargs,
         )
 
@@ -981,6 +986,7 @@ def evaluate_driver_feasibility(
             vehicle_speed=VEHICLE_TRANSPORT_SPEED,
             prep_time=TIEMPO_ALISTAR,
             finish_time=TIEMPO_FINALIZACION,
+            time_dict=time_dict,
             **kwargs,
         )
 
