@@ -481,6 +481,7 @@ def _direct_insertion_empty_driver(
         vehicle_speed=VEHICLE_TRANSPORT_SPEED,
         prep_time=TIEMPO_ALISTAR,
         finish_time=TIEMPO_FINALIZACION,
+        time_dict=time_dict,
         **kwargs,
     )
 
@@ -981,6 +982,7 @@ def evaluate_driver_feasibility(
             vehicle_speed=VEHICLE_TRANSPORT_SPEED,
             prep_time=TIEMPO_ALISTAR,
             finish_time=TIEMPO_FINALIZACION,
+            time_dict=time_dict,
             **kwargs,
         )
 
