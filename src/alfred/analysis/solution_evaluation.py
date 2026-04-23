@@ -89,11 +89,20 @@ _SUMMARY_METRICS: List[Tuple[str, str]] = [
 # ---------------------------------------------------------------------------
 
 
-def _parse_dt(s: Optional[str]) -> Optional[datetime]:
-    """Parse an ISO datetime string → timezone-aware datetime in Bogotá TZ."""
-    if not s:
+def _parse_dt(s) -> Optional[datetime]:
+    """Parse an ISO datetime string or Timestamp → timezone-aware datetime in Bogotá TZ."""
+    if s is None:
         return None
-    raw = s.strip().replace("Z", "+00:00")
+    if isinstance(s, (datetime, pd.Timestamp)):
+        dt = s.to_pydatetime() if isinstance(s, pd.Timestamp) else s
+        if pd.isna(dt):
+            return None
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=BOGOTA_TZ)
+        return dt.astimezone(BOGOTA_TZ)
+    raw = str(s).strip().replace("Z", "+00:00")
+    if not raw:
+        return None
     try:
         dt = datetime.fromisoformat(raw)
     except ValueError:
