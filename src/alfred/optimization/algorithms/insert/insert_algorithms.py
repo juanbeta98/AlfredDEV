@@ -399,6 +399,7 @@ def _simulate_downstream_shift(
             vehicle_speed=VEHICLE_TRANSPORT_SPEED,
             prep_time=TIEMPO_ALISTAR,
             finish_time=TIEMPO_FINALIZACION,
+            time_dict=time_dict,
             **kwargs,
         )
 
@@ -636,6 +637,8 @@ def _evaluate_and_execute_insertion_before_first_labor(
         TIEMPO_FINALIZACION=tiempo_finalizacion,
         TIEMPO_GRACIA=tiempo_gracia,
         EARLY_BUFFER=early_buffer,
+        model_params=model_params,
+        time_dict=time_dict,
         **kwargs,
     )
 
