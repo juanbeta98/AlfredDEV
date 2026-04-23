@@ -1,5 +1,6 @@
 import os
 import sys
+import time
 import uuid
 import logging
 from datetime import datetime, timezone
@@ -116,6 +117,7 @@ def main() -> int:
         log_info("local_outputs_disabled")
 
     artifact_run_id = f"ass-{run_id}"
+    use_api: bool = Config.USE_API
     request_id: Optional[str] = None
     request_payload = None
     request_filters = None
@@ -550,6 +552,27 @@ def main() -> int:
             algorithm=algorithm_name,
         )
 
+    if should_reconstruct_preassigned and "is_assignable" in input_df.columns:
+        # is_assignable=False with no driver: exclude from the run entirely.
+        ignore_mask = (
+            input_df["is_assignable"].eq(False)
+            & input_df.get("assigned_driver", pd.Series(dtype=object)).isna()
+        )
+        if ignore_mask.any():
+            log_info("is_assignable_filter_dropped", count=int(ignore_mask.sum()))
+            input_df = input_df.loc[~ignore_mask].copy()
+
+        # is_assignable=True with a driver: strip the driver so the labor is re-optimized.
+        if "assigned_driver" in input_df.columns:
+            reassignable_mask = (
+                input_df["is_assignable"].eq(True)
+                & input_df["assigned_driver"].notna()
+                & input_df["assigned_driver"].astype(str).str.strip().ne("")
+            )
+            if reassignable_mask.any():
+                log_info("is_assignable_filter_stripped", count=int(reassignable_mask.sum()))
+                input_df.loc[reassignable_mask, "assigned_driver"] = None
+
     if should_reconstruct_preassigned and "assigned_driver" in input_df.columns:
         has_preassigned = (
             input_df["assigned_driver"].notna()
@@ -840,6 +863,7 @@ def main() -> int:
                 else None,
                 strict_time_check=False,
             )
+        _stage_t["validate_solution"] = round(time.perf_counter() - _t0, 3)
 
         if Config.WRITE_VALIDATION_REPORTS and not Config.DISABLE_FILE_OUTPUT:
             with log_step("write_solution_validation_outputs"):
@@ -884,6 +908,7 @@ def main() -> int:
     # --------------------------------------------------
     evaluation_report: Dict[str, Any] = {}
     try:
+        _t0 = time.perf_counter()
         with log_step("evaluate_solution"):
             results, evaluation_report = evaluate_solution(
                 labors_df=results,
@@ -892,6 +917,7 @@ def main() -> int:
                 grace_minutes=settings.model_params.tiempo_gracia_min,
                 default_shift_end=settings.model_params.workday_end_str,
             )
+        _stage_t["evaluate_solution"] = round(time.perf_counter() - _t0, 3)
 
         if Config.WRITE_MODEL_SOLUTION and not Config.DISABLE_FILE_OUTPUT:
             with log_step("write_solution_evaluation_output"):
@@ -914,6 +940,7 @@ def main() -> int:
     need_output_payload = use_api or Config.WRITE_MODEL_SOLUTION
     if need_output_payload:
         try:
+            _t0 = time.perf_counter()
             with log_step("format_output"):
                 output_payload = OutputFormatter.format(
                     results=results,
@@ -927,6 +954,7 @@ def main() -> int:
                     request_id=request_id,
                     status="completed",
                 )
+            _stage_t["format_output"] = round(time.perf_counter() - _t0, 3)
 
         except Exception as exc:
             logger.exception("output_formatting_failed")
@@ -989,8 +1017,10 @@ def main() -> int:
                     "estimated_time_fallback_labor_ids": _et_fallback_ids,
                 },
             }
+            _t0 = time.perf_counter()
             with log_step("save_warnings_report"):
                 save_local_warnings_report(warnings_report, output_dir=output_dir, run_id=artifact_run_id)
+            _stage_t["save_warnings_report"] = round(time.perf_counter() - _t0, 3)
 
         if use_api:
             sender = ResultSender(
@@ -1000,8 +1030,10 @@ def main() -> int:
                 timeout=Config.REQUEST_TIMEOUT,
                 max_retries=Config.API_MAX_RETRIES,
             )
+            _t0 = time.perf_counter()
             with log_step("send_results"):
                 sender.send_results(output_payload, request_id=request_id)
+            _stage_t["send_results"] = round(time.perf_counter() - _t0, 3)
 
         log_info("output_delivered")
 
@@ -1067,6 +1099,7 @@ def main() -> int:
                 labors_summary=_labors_summary,
                 instance_config=_instance_config,
                 algorithm_config=_algorithm_config,
+                extra_fields={"stage_timings_seconds": _stage_t},
             )
     except Exception:
         logger.exception("run_manifest_finalization_failed")
