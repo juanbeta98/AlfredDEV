@@ -578,6 +578,66 @@ def main() -> int:
             input_df["assigned_driver"].notna()
             & input_df["assigned_driver"].astype(str).str.strip().ne("")
         )
+
+        # --- Batch OSRM pre-computation for preassigned reconstruction ---
+        # Enrich master_data.dist_dict with a single Table API call so that
+        # reconstruct_preassigned_state and build_driver_movements make zero
+        # individual /route requests.  Runs whenever preassigned labors exist
+        # and distance_method is "osrm".
+        if has_preassigned.any() and settings.distance_method == "osrm":
+            _osrm_url = os.environ.get("OSRM_URL", "")
+            if _osrm_url:
+                from alfred.optimization.common.distance_utils import batch_distance_matrix
+                from alfred.optimization.common.movements import _filter_drivers_by_city
+
+                _precomp_dist_dict: Dict[str, Any] = {
+                    k: dict(v) for k, v in master_data.dist_dict.items()
+                }
+                _department_codes = (
+                    input_df["department_code"].dropna().unique().tolist()
+                    if "department_code" in input_df.columns
+                    else []
+                )
+                for _dept in _department_codes:
+                    _dept_str = str(_dept)
+                    _city_dir = _filter_drivers_by_city(master_data.directorio_df, _dept_str)
+                    _driver_pts = [
+                        f"POINT ({row.longitud} {row.latitud})"
+                        for _, row in _city_dir.iterrows()
+                        if pd.notna(row.get("latitud")) and pd.notna(row.get("longitud"))
+                    ]
+                    _dept_rows = input_df[
+                        input_df["department_code"].astype(str) == _dept_str
+                    ]
+                    _starts = _dept_rows["map_start_point"].dropna().unique().tolist() if "map_start_point" in _dept_rows.columns else []
+                    _ends   = _dept_rows["map_end_point"].dropna().unique().tolist()   if "map_end_point"   in _dept_rows.columns else []
+                    _all_pts = list(dict.fromkeys(_driver_pts + _starts + _ends))
+                    if len(_all_pts) < 2:
+                        continue
+                    _t_precomp = time.perf_counter()
+                    _batch_dist, _ = batch_distance_matrix(
+                        _all_pts, _all_pts, _osrm_url,
+                        include_times=False,
+                    )
+                    if _batch_dist:
+                        existing = _precomp_dist_dict.get(_dept_str, {})
+                        _precomp_dist_dict[_dept_str] = {**_batch_dist, **existing}
+                        logger.info(
+                            "osrm_precompute_preassigned city=%s unique_points=%d pairs=%d elapsed=%.3fs",
+                            _dept_str, len(_all_pts), len(_batch_dist),
+                            time.perf_counter() - _t_precomp,
+                        )
+                    else:
+                        logger.warning(
+                            "osrm_precompute_preassigned_failed city=%s — reconstruction will use per-call fallback",
+                            _dept_str,
+                        )
+                master_data = MasterData(
+                    directorio_df=master_data.directorio_df,
+                    duraciones_df=master_data.duraciones_df,
+                    dist_dict=_precomp_dist_dict,
+                )
+
         if has_preassigned.any():
             from alfred.optimization.common.preassigned import reconstruct_preassigned_state
 
