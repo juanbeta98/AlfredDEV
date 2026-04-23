@@ -609,8 +609,12 @@ def main() -> int:
                     _dept_rows = input_df[
                         input_df["department_code"].astype(str) == _dept_str
                     ]
-                    _starts = _dept_rows["map_start_point"].dropna().unique().tolist() if "map_start_point" in _dept_rows.columns else []
-                    _ends   = _dept_rows["map_end_point"].dropna().unique().tolist()   if "map_end_point"   in _dept_rows.columns else []
+                    # input_df uses start_address_point/end_address_point at this stage;
+                    # map_start_point/map_end_point are aliased inside reconstruct_preassigned_state.
+                    _start_col = "start_address_point" if "start_address_point" in _dept_rows.columns else "map_start_point"
+                    _end_col   = "end_address_point"   if "end_address_point"   in _dept_rows.columns else "map_end_point"
+                    _starts = _dept_rows[_start_col].dropna().unique().tolist() if _start_col in _dept_rows.columns else []
+                    _ends   = _dept_rows[_end_col].dropna().unique().tolist()   if _end_col   in _dept_rows.columns else []
                     _all_pts = list(dict.fromkeys(_driver_pts + _starts + _ends))
                     if len(_all_pts) < 2:
                         continue
