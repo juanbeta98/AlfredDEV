@@ -124,14 +124,17 @@ def main() -> int:
     intermediate_export_dir: Optional[Path] = None
     output_dir = Config.RUNS_DIR
     department: int | str | None = Config.DEPARTMENT
+    _stage_t: dict[str, float] = {}
 
     # --------------------------------------------------
     # 2. Load request payload (optional)
     # --------------------------------------------------
     request_path = os.getenv("REQUEST_PATH", "request.json")
     try:
+        _t0 = time.perf_counter()
         with log_step("load_request", path=request_path):
             request_payload = load_request(request_path)
+        _stage_t["load_request"] = round(time.perf_counter() - _t0, 3)
 
         request_id = request_payload.request_id or request_id
         request_filters = request_payload.filters
@@ -194,12 +197,14 @@ def main() -> int:
                 if request_filters.end_date is not None:
                     end_date = request_filters.end_date
 
+            _t0 = time.perf_counter()
             with log_step("fetch_optimization_data"):
                 raw_input = alfred_client.get_optimization_data(
                     department=department,
                     start_date=start_date,
                     end_date=end_date,
                 )
+            _stage_t["input_acquisition"] = round(time.perf_counter() - _t0, 3)
 
             # If API returns request_id, prefer it
             request_id = raw_input.get("request_id") or request_id
@@ -208,8 +213,10 @@ def main() -> int:
             local_path = Config.LOCAL_INPUT_PATH
             local_input_is_json_payload = Path(local_path).suffix.lower() == ".json"
 
+            _t0 = time.perf_counter()
             with log_step("load_local_input", path=local_path):
                 raw_input = load_local_input(local_path, write_debug_json=True, run_id=artifact_run_id)
+            _stage_t["input_acquisition"] = round(time.perf_counter() - _t0, 3)
 
         # -----------------------------------------------------------
         # SERVICE MASK (testing only) — remove this block and unset
@@ -243,8 +250,10 @@ def main() -> int:
     # 4. Parse input
     # --------------------------------------------------
     try:
+        _t0 = time.perf_counter()
         with log_step("parse_input"):
             input_df, metadata = InputParser.parse(raw_input)
+        _stage_t["parse_input"] = round(time.perf_counter() - _t0, 3)
 
         if input_df is None or input_df.empty:
             raise ValueError("parsed_input_empty")
@@ -346,8 +355,10 @@ def main() -> int:
 
         validator = InputValidator(rules=rules)
 
+        _t0 = time.perf_counter()
         with log_step("validate_input"):
             valid_df, invalid_df, validation_report = validator.validate(input_df)
+        _stage_t["validate_input"] = round(time.perf_counter() - _t0, 3)
 
         if Config.WRITE_VALIDATION_REPORTS and not Config.DISABLE_FILE_OUTPUT:
             with log_step("write_validation_reports"):
@@ -411,12 +422,14 @@ def main() -> int:
             )
 
             try:
+                _t0 = time.perf_counter()
                 with log_step("fetch_driver_directory"):
                     raw_drivers = driver_client.get_driver_directory(
                         active=True,
                         schedule_date=schedule_date,
                         department=department,
                     )
+                _stage_t["driver_directory_load"] = round(time.perf_counter() - _t0, 3)
             except Exception as exc:
                 logger.exception("driver_directory_api_failed")
                 raise
@@ -443,6 +456,7 @@ def main() -> int:
                 )
                 return 2
         else:
+            _t0 = time.perf_counter()
             with log_step(
                 "load_local_driver_directory",
                 path=Config.LOCAL_DRIVER_DIRECTORY_FILE,
@@ -450,6 +464,7 @@ def main() -> int:
                 driver_directory_df = load_driver_directory_df(
                     Config.LOCAL_DRIVER_DIRECTORY_FILE
                 )
+            _stage_t["driver_directory_load"] = round(time.perf_counter() - _t0, 3)
 
             if request_filters and request_filters.department is not None:
                 driver_directory_df = _filter_df_by_department_code(
@@ -543,6 +558,7 @@ def main() -> int:
         if has_preassigned.any():
             from alfred.optimization.common.preassigned import reconstruct_preassigned_state
 
+            _t0 = time.perf_counter()
             with log_step("reconstruct_preassigned"):
                 preassigned_df, input_df, preassigned_moves_df, preassigned_metrics = reconstruct_preassigned_state(
                     input_df,
@@ -552,6 +568,7 @@ def main() -> int:
                     dist_dict=master_data.dist_dict,
                     model_params=settings.model_params,
                 )
+            _stage_t["reconstruct_preassigned"] = round(time.perf_counter() - _t0, 3)
 
             if not preassigned_df.empty and "assigned_driver" in preassigned_df.columns:
                 preassigned_df["original_assigned_driver"] = preassigned_df["assigned_driver"]
@@ -687,8 +704,10 @@ def main() -> int:
                 master_data_override=master_data,
             )
 
+            _t0 = time.perf_counter()
             with log_step("solve"):
                 results, metrics, algo_artifacts = solver.solve()
+            _stage_t["solve"] = round(time.perf_counter() - _t0, 3)
 
             if not preassigned_df.empty:
                 # Use INSERT-updated base labors when available: downstream shifts
@@ -803,6 +822,7 @@ def main() -> int:
     try:
         solution_validation_report: Dict[str, Any] = {}
         solution_validation_issues = pd.DataFrame()
+        _t0 = time.perf_counter()
         with log_step("validate_solution"):
             solution_validation_report, solution_validation_issues = validate_solution(
                 labors_df=results,
