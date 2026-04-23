@@ -80,9 +80,17 @@ async def run(request: Request) -> JSONResponse:
             )
         elapsed = time.monotonic() - t0
 
-        # Forward subprocess stderr to server stderr so Cloud Logging captures it.
+        # Forward subprocess output to both streams so Cloud Logging captures it
+        # regardless of which stream the customer's environment reads.
+        # [ALFRED-LOG] = pipeline log lines, [ALFRED-OUT] = structured output.
         if proc.stderr:
-            print(proc.stderr, end="", file=sys.stderr, flush=True)
+            for line in proc.stderr.splitlines():
+                print(f"[ALFRED-LOG] {line}", flush=True)
+                print(f"[ALFRED-LOG] {line}", file=sys.stderr, flush=True)
+        if proc.stdout:
+            for line in proc.stdout.splitlines():
+                print(f"[ALFRED-OUT] {line}", flush=True)
+                print(f"[ALFRED-OUT] {line}", file=sys.stderr, flush=True)
     finally:
         Path(tmp_path).unlink(missing_ok=True)
 
