@@ -26,6 +26,7 @@ Usage
 
 import json
 import subprocess
+import sys
 import tempfile
 import time
 from pathlib import Path
@@ -78,6 +79,10 @@ async def run(request: Request) -> JSONResponse:
                 }
             )
         elapsed = time.monotonic() - t0
+
+        # Forward subprocess stderr to server stderr so Cloud Logging captures it.
+        if proc.stderr:
+            print(proc.stderr, end="", file=sys.stderr, flush=True)
     finally:
         Path(tmp_path).unlink(missing_ok=True)
 
