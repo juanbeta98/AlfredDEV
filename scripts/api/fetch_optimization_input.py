@@ -113,7 +113,7 @@ def _build_services_summary(payload: object) -> dict:
         if svc.get("is_assignable"):
             services_assignable += 1
 
-        labors = svc.get("serviceLabors", [])
+        labors = svc.get("service_labors") or svc.get("serviceLabors") or []
         total_labors += len(labors)
         if len(labors) == 1:
             uni_labor_services += 1
