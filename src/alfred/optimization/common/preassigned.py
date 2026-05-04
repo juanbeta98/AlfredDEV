@@ -165,10 +165,12 @@ def _finalize_preassigned_df(df: pd.DataFrame) -> pd.DataFrame:
 
 def _split_service_level_preassigned(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
-    Split labors by service-level preassignment.
+    Split labors by individual driver assignment.
 
-    A service is considered preassigned when any of its labors has a
-    non-null `assigned_driver`.
+    A labor is considered preassigned when it has a non-null `assigned_driver`.
+    For multi-labor services this means assigned and unassigned labors of the same
+    service can land in different partitions — assigned labors are preserved as the
+    base schedule while unassigned labors are fed to the INSERT algorithm.
     """
     if df is None or df.empty:
         return pd.DataFrame(), pd.DataFrame()
@@ -176,14 +178,15 @@ def _split_service_level_preassigned(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd
     if "service_id" not in df.columns:
         raise ValueError("Missing required column: service_id")
 
-    # A service is preassigned if ANY of its labors has a non-null assigned_driver.
     assigned_driver_col = df.get("assigned_driver")
     if assigned_driver_col is None:
-        assigned_service_ids = pd.Index([])
+        assigned_mask = pd.Series(False, index=df.index)
     else:
-        assigned_service_ids = df.loc[assigned_driver_col.notna(), "service_id"].unique()
+        assigned_mask = (
+            assigned_driver_col.notna()
+            & assigned_driver_col.astype(str).str.strip().ne("")
+        )
 
-    assigned_mask = df["service_id"].isin(assigned_service_ids)
     assigned_df = df.loc[assigned_mask].copy()
     unassigned_df = df.loc[~assigned_mask].copy()
     return assigned_df, unassigned_df

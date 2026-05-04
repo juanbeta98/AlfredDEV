@@ -562,17 +562,6 @@ def main() -> int:
             log_info("is_assignable_filter_dropped", count=int(ignore_mask.sum()))
             input_df = input_df.loc[~ignore_mask].copy()
 
-        # is_assignable=True with a driver: strip the driver so the labor is re-optimized.
-        if "assigned_driver" in input_df.columns:
-            reassignable_mask = (
-                input_df["is_assignable"].eq(True)
-                & input_df["assigned_driver"].notna()
-                & input_df["assigned_driver"].astype(str).str.strip().ne("")
-            )
-            if reassignable_mask.any():
-                log_info("is_assignable_filter_stripped", count=int(reassignable_mask.sum()))
-                input_df.loc[reassignable_mask, "assigned_driver"] = None
-
     if should_reconstruct_preassigned and "assigned_driver" in input_df.columns:
         has_preassigned = (
             input_df["assigned_driver"].notna()
