@@ -21,13 +21,13 @@ class OptimizationSettings:
     max_iterations: dict[str, dict[str, int]] = field(
         default_factory=lambda: {
             "OFFLINE": {
-                "25": 2500,  # Cundinamarca (Bogotá)
-                "5":  1000,  # Antioquia (Medellín)
-                "76": 1000,  # Valle del Cauca (Cali)
-                "8":  250,   # Atlántico (Barranquilla)
-                "13": 250,   # Bolívar (Cartagena)
-                "68": 250,   # Santander (Bucaramanga)
-                "66": 250,   # Risaralda (Pereira)
+                "25": 5000,  # Cundinamarca (Bogotá)
+                "5":  2000,  # Antioquia (Medellín)
+                "76": 2000,  # Valle del Cauca (Cali)
+                "8":  500,   # Atlántico (Barranquilla)
+                "13": 500,   # Bolívar (Cartagena)
+                "68": 500,   # Santander (Bucaramanga)
+                "66": 500,   # Risaralda (Pereira)
             },
             "INSERT": {
                 "25": 750,

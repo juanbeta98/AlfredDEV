@@ -6,6 +6,7 @@ import pandas as pd
 
 from alfred.utils.datetime_utils import normalize_datetime_columns_to_colombia
 from alfred.data.geo.location import series_location_key
+from alfred.optimization.common.distance_utils import compute_driver_move
 
 logger = logging.getLogger(__name__)
 
@@ -411,6 +412,7 @@ def reconstruct_preassigned_state(
     dist_method: str,
     dist_dict: Dict[str, Dict],
     model_params: Any,
+    time_dict: Optional[Dict[str, Any]] = None,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, Dict[str, Any]]:
     if labors_df is None or labors_df.empty:
         metrics = {
@@ -504,6 +506,7 @@ def reconstruct_preassigned_state(
         day_str = str(day)
         city_key = str(city_key)
         city_dist = _city_dist_slice(dist_dict, city_key)
+        city_time_dict = time_dict if time_dict else None
 
         drivers = init_drivers(
             labors_df=group,
@@ -573,14 +576,13 @@ def reconstruct_preassigned_state(
                     driver_state["available"] = av
                 assigned_df.loc[idx, "driver_available_at"] = av
 
-                dist_km, city_dist = distance(
+                dist_km, travel_min = compute_driver_move(
                     driver_state["position"],
                     row["map_start_point"],
-                    method=dist_method,
+                    model_params,
+                    dist_method=dist_method,
                     dist_dict=city_dist,
-                )
-                travel_min = 0 if pd.isna(dist_km) else model_params.driver_move_time_min(
-                    dist_km, float("nan")
+                    time_dict=city_time_dict,
                 )
                 arrival = av + timedelta(minutes=travel_min)
                 assigned_df.loc[idx, "computed_arrival"] = arrival
@@ -739,6 +741,7 @@ def reconstruct_preassigned_state(
             ALFRED_SPEED=alfred_speed,
             city_key=city_key,
             model_params=model_params,
+            time_dict=city_time_dict,
         )
         if isinstance(moves, pd.DataFrame) and not moves.empty:
             moves_parts.append(moves)

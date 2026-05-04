@@ -318,3 +318,44 @@ def travel_time_minutes(
     d_km, updated_dist = distance(p1, p2, method=dist_method, dist_dict=dist_dict, timeout=timeout, **kwargs)
     t_min = 0.0 if math.isnan(d_km) else d_km / speed_kmh * 60.0
     return d_km, t_min, updated_dist, time_dict
+
+
+def compute_driver_move(
+    p1: str,
+    p2: str,
+    model_params: Any,
+    dist_method: str = "osrm",
+    dist_dict: dict[Any, Any] | None = None,
+    time_dict: dict[Any, Any] | None = None,
+) -> tuple[float, float]:
+    """Compute (dist_km, travel_min) for a driver move from p1 to p2.
+
+    Applies the walk-buffer + transit slowdown model from
+    model_params.driver_move_time_min, which models drivers travelling by foot
+    and public transit (not a private car).
+
+    OSRM car time is resolved in order:
+      1. time_dict cache (pre-computed batch — used inside the pipeline)
+      2. Live OSRM /route call (acceptable outside the pipeline, e.g. notebooks)
+      3. NaN → driver_move_time_min falls back to alfred_speed_kmh
+
+    dist_km is resolved from dist_dict cache first, then a live OSRM/haversine
+    call via distance().
+
+    Returns (dist_km, travel_min).  Both are 0.0 when p1/p2 are invalid.
+    """
+    dist_km, _ = distance(p1, p2, method=dist_method, dist_dict=dist_dict)
+    if math.isnan(dist_km):
+        return 0.0, 0.0
+
+    osrm_t = (time_dict or {}).get((p1, p2), float("nan"))
+    if math.isnan(osrm_t) and dist_method == "osrm":
+        _, osrm_t, _, _ = travel_time_minutes(
+            p1, p2,
+            speed_kmh=model_params.alfred_speed_kmh,
+            time_method="osrm_times",
+            dist_method=dist_method,
+        )
+
+    travel_min = model_params.driver_move_time_min(dist_km, osrm_t)
+    return dist_km, travel_min

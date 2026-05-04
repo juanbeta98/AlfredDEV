@@ -32,7 +32,7 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 import plotly.graph_objects as go
 
-from alfred.optimization.common.distance_utils import distance as _compute_distance
+from alfred.optimization.common.distance_utils import distance as _compute_distance, compute_driver_move
 from alfred.optimization.settings.model_params import ModelParams
 from alfred.optimization.settings.solver_settings import DEFAULT_DISTANCE_METHOD
 
@@ -496,6 +496,8 @@ def flatten_labors(
 def reconstruct_timeline(
     rows: List[Dict[str, Any]],
     speed_kmh: float,
+    model_params: Optional[ModelParams] = None,
+    dist_method: str = DEFAULT_DISTANCE_METHOD,
 ) -> List[Dict[str, Any]]:
     """Reconstruct a 3-segment timeline per driver from flat labor rows.
 
@@ -517,14 +519,24 @@ def reconstruct_timeline(
     for driver_id, labors in by_driver.items():
         labors_sorted = sorted(labors, key=lambda x: x["actual_start"])
         prev_end: Optional[datetime] = None
+        prev_pos_wkt: Optional[str] = None
 
         for labor in labors_sorted:
             actual_start: datetime = labor["actual_start"]
             actual_end: datetime = labor["actual_end"]
-            move_dist: float = labor["driver_move_distance_km"] or 0.0
-            move_min: float = (
-                move_dist / speed_kmh * 60.0 if speed_kmh > 0 and move_dist else 0.0
-            )
+            move_dist: float = labor.get("driver_move_distance_km") or 0.0
+
+            if move_dist > 0 and model_params is not None and prev_pos_wkt is not None:
+                start_wkt = labor.get("map_start_wkt") or labor.get("map_start_point")
+                _, move_min = compute_driver_move(
+                    prev_pos_wkt, start_wkt, model_params,
+                    dist_method=dist_method,
+                )
+            elif move_dist > 0 and speed_kmh > 0:
+                move_min = move_dist / speed_kmh * 60.0
+            else:
+                move_min = 0.0
+
             move_start: datetime = actual_start - timedelta(minutes=move_min)
 
             base = {
@@ -571,6 +583,7 @@ def reconstruct_timeline(
             })
 
             prev_end = actual_end
+            prev_pos_wkt = labor.get("map_end_wkt") or labor.get("map_end_point")
 
     return segments
 

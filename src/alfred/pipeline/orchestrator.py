@@ -584,6 +584,7 @@ def main() -> int:
         # reconstruct_preassigned_state and build_driver_movements make zero
         # individual /route requests.  Runs whenever preassigned labors exist
         # and distance_method is "osrm".
+        _precomp_time_dict: Dict[Any, Any] = {}
         if has_preassigned.any() and settings.distance_method == "osrm":
             _osrm_url = os.environ.get("OSRM_URL", "")
             if _osrm_url:
@@ -619,16 +620,17 @@ def main() -> int:
                     if len(_all_pts) < 2:
                         continue
                     _t_precomp = time.perf_counter()
-                    _batch_dist, _ = batch_distance_matrix(
+                    _batch_dist, _batch_time = batch_distance_matrix(
                         _all_pts, _all_pts, _osrm_url,
-                        include_times=False,
+                        include_times=True,
                     )
                     if _batch_dist:
                         existing = _precomp_dist_dict.get(_dept_str, {})
                         _precomp_dist_dict[_dept_str] = {**_batch_dist, **existing}
+                        _precomp_time_dict.update(_batch_time)
                         logger.info(
-                            "osrm_precompute_preassigned city=%s unique_points=%d pairs=%d elapsed=%.3fs",
-                            _dept_str, len(_all_pts), len(_batch_dist),
+                            "osrm_precompute_preassigned city=%s unique_points=%d pairs=%d time_pairs=%d elapsed=%.3fs",
+                            _dept_str, len(_all_pts), len(_batch_dist), len(_batch_time),
                             time.perf_counter() - _t_precomp,
                         )
                     else:
@@ -654,6 +656,7 @@ def main() -> int:
                     dist_method=settings.distance_method,
                     dist_dict=master_data.dist_dict,
                     model_params=settings.model_params,
+                    time_dict=_precomp_time_dict if _precomp_time_dict else None,
                 )
             _stage_t["reconstruct_preassigned"] = round(time.perf_counter() - _t0, 3)
 
