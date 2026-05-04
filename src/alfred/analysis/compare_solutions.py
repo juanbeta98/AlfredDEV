@@ -212,8 +212,8 @@ def load_and_prepare(
         )
 
     # Reconstruct timelines
-    segments_a = reconstruct_timeline(rows_a, speed_kmh)
-    segments_b = reconstruct_timeline(rows_b, speed_kmh)
+    segments_a = reconstruct_timeline(rows_a, speed_kmh, model_params=params, dist_method=distance_method)
+    segments_b = reconstruct_timeline(rows_b, speed_kmh, model_params=params, dist_method=distance_method)
 
     drivers_a    = sorted({r["driver_id"] for r in rows_a if r["driver_id"] is not None})
     drivers_b    = sorted({r["driver_id"] for r in rows_b if r["driver_id"] is not None})

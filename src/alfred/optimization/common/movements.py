@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
-from .distance_utils import distance
+from .distance_utils import distance, compute_driver_move
 from ...data.id_normalization import normalize_id_value
 from ..settings.model_params import ModelParams
 
@@ -189,25 +189,26 @@ def build_driver_movements(
             continue
 
         # Travel from previous position to this labor's start
-        move_dkm, _ = distance(
-            prev_pos,
-            row["map_start_point"],
-            method=dist_method,
-            dist_dict=dist_dict,
-            **kwargs,
-        )
-        move_dkm = 0.0 if (pd.isna(move_dkm) or math.isnan(move_dkm)) else move_dkm
-        if move_dkm > 0:
-            if model_params is not None and time_dict is not None:
-                osrm_t = time_dict.get(
-                    (prev_pos, row["map_start_point"]), float("nan")
-                )
-                travel_min = model_params.driver_move_time_min(move_dkm, osrm_t)
-            else:
-                travel_min = move_dkm / ALFRED_SPEED * 60
-            travel_time = timedelta(minutes=travel_min)
+        if model_params is not None:
+            move_dkm, travel_min = compute_driver_move(
+                prev_pos,
+                row["map_start_point"],
+                model_params,
+                dist_method=dist_method,
+                dist_dict=dist_dict,
+                time_dict=time_dict,
+            )
         else:
-            travel_time = timedelta(0)
+            move_dkm, _ = distance(
+                prev_pos,
+                row["map_start_point"],
+                method=dist_method,
+                dist_dict=dist_dict,
+                **kwargs,
+            )
+            move_dkm = 0.0 if (pd.isna(move_dkm) or math.isnan(move_dkm)) else move_dkm
+            travel_min = move_dkm / ALFRED_SPEED * 60
+        travel_time = timedelta(minutes=travel_min) if move_dkm > 0 else timedelta(0)
 
         labor_start = row[start_col]
         move_end = row[start_col]
