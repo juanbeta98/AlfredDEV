@@ -68,8 +68,14 @@ def _append_labor_row(labors_df: pd.DataFrame, new_row: pd.Series) -> pd.DataFra
 # DRIVER DIRECTORY HELPERS
 # ===========================================================================
 
-def _get_driver_home_pos(directorio_df: pd.DataFrame, driver: str) -> Optional[str]:
+def _get_driver_home_pos(
+    directorio_df: pd.DataFrame,
+    driver: str,
+    home_cache: Optional[Dict[str, Optional[str]]] = None,
+) -> Optional[str]:
     """Return the driver's home start position as a WKT POINT string, or None."""
+    if home_cache is not None:
+        return home_cache.get(str(driver).strip())
     driver_str = str(driver).strip()
     for col in ("driver_id", "ALFRED'S"):
         if col not in directorio_df.columns:
@@ -451,7 +457,7 @@ def _direct_insertion_empty_driver(
     time_dict: Optional[Dict[Any, Any]] = None,
     **kwargs,
 ) -> Tuple[bool, str, Optional[dict]]:
-    home_pos = _get_driver_home_pos(directorio_df, driver)
+    home_pos = _get_driver_home_pos(directorio_df, driver, home_cache=kwargs.get("home_cache"))
     if home_pos is None:
         return False, "Driver not found in directory or missing location.", None
 
@@ -524,9 +530,10 @@ def _is_creation_before_first_labor(
     moves_driver_df: pd.DataFrame,
     directorio_df: pd.DataFrame,
     driver: str,
+    home_cache: Optional[Dict[str, Optional[str]]] = None,
 ) -> bool:
     """Return True if the driver is still at their home base (first move starts there)."""
-    home_pos = _get_driver_home_pos(directorio_df, driver)
+    home_pos = _get_driver_home_pos(directorio_df, driver, home_cache=home_cache)
     if home_pos is None:
         return False
     first_start = str(moves_driver_df.iloc[0]["start_point"]).strip()
@@ -556,7 +563,7 @@ def _evaluate_and_execute_insertion_before_first_labor(
     **kwargs,
 ) -> Tuple[bool, str, Optional[dict]]:
     next_labor = moves_driver_df.loc[2]  # First _labor row in the reset-index triplet
-    home_pos = _get_driver_home_pos(directorio_df, driver)
+    home_pos = _get_driver_home_pos(directorio_df, driver, home_cache=kwargs.get("home_cache"))
     if home_pos is None:
         return False, "Driver not found in directory.", None
 
@@ -752,7 +759,7 @@ def evaluate_driver_feasibility(
     # ------------------------------------------------------------------
     # Case 2: Insertion before the driver's first labor
     # ------------------------------------------------------------------
-    if _is_creation_before_first_labor(moves_driver_df, directorio_df, driver):
+    if _is_creation_before_first_labor(moves_driver_df, directorio_df, driver, home_cache=kwargs.get("home_cache")):
         if new_labor["schedule_date"] <= moves_driver_df.loc[2, "schedule_date"]:
             return _evaluate_and_execute_insertion_before_first_labor(
                 new_labor=new_labor,
@@ -1203,9 +1210,11 @@ def commit_labor_insertion(
     early_buffer: float,
     forced_start_time=None,
     selection_mode: str = "min_total_distance",
+    random_state: Optional[int] = None,
     time_method: str = "speed_based",
     time_dict: Optional[Dict[Any, Any]] = None,
     model_params=None,
+    moves_by_driver: Optional[Dict[str, pd.DataFrame]] = None,
     **kwargs,
 ) -> Tuple[bool, pd.DataFrame, pd.DataFrame, Optional[Any], Optional[str]]:
     """
@@ -1215,13 +1224,16 @@ def commit_labor_insertion(
     candidate_insertions = []
 
     for driver in drivers:
-        _, moves_driver_df = filter_dfs_for_insertion(
-            labors_algo_df=labors_algo_df,
-            moves_algo_df=moves_algo_df,
-            city=city,
-            fecha=fecha,
-            driver=driver,
-        )
+        if moves_by_driver is not None:
+            moves_driver_df = moves_by_driver.get(str(driver).strip(), pd.DataFrame())
+        else:
+            _, moves_driver_df = filter_dfs_for_insertion(
+                labors_algo_df=labors_algo_df,
+                moves_algo_df=moves_algo_df,
+                city=city,
+                fecha=fecha,
+                driver=driver,
+            )
 
         feasible, _, insertion_plan = evaluate_driver_feasibility(
             new_labor=new_labor,
@@ -1250,7 +1262,7 @@ def commit_labor_insertion(
         return False, labors_algo_df, moves_algo_df, None, None
 
     _, best_plan, _ = get_best_insertion(
-        candidate_insertions, selection_mode=selection_mode
+        candidate_insertions, selection_mode=selection_mode, random_state=random_state
     )
 
     labors_updated, moves_updated, end_time, end_pos = commit_new_labor_insertion(
@@ -1428,6 +1440,27 @@ def commit_nontransport_labor_insertion(
 # ITERATION RUNNER
 # ===========================================================================
 
+def _build_moves_by_driver(
+    moves_df: pd.DataFrame,
+    city: str,
+    fecha: str,
+) -> Dict[str, pd.DataFrame]:
+    """Group moves by driver for the given city+day — O(1) lookup replaces O(D) filter+sort."""
+    if moves_df.empty:
+        return {}
+    fecha_date = pd.to_datetime(fecha).date()
+    day_mask = moves_df["schedule_date"].dt.date == fecha_date
+    if "department_code" in moves_df.columns:
+        day_mask = day_mask & (moves_df["department_code"] == city)
+    day_moves = moves_df[day_mask]
+    result: Dict[str, pd.DataFrame] = {}
+    for drv, grp in day_moves.groupby("assigned_driver", sort=False):
+        result[str(drv).strip()] = grp.sort_values(
+            ["schedule_date", "actual_start", "actual_end"], ignore_index=True
+        )
+    return result
+
+
 def run_insertion_worker(
     base_labors_df: pd.DataFrame,
     base_moves_df: pd.DataFrame,
@@ -1466,6 +1499,15 @@ def run_insertion_worker(
         working_labors = base_labors_df.copy()
         working_moves = base_moves_df.copy()
 
+    # Pre-build driver home position cache to avoid repeated iterrows scans of
+    # directorio_df inside evaluate_driver_feasibility (Case 1 and Case 2 checks).
+    driver_home_cache: Dict[str, Optional[str]] = {
+        drv: _get_driver_home_pos(directorio_df, drv) for drv in drivers
+    }
+
+    # Track new labor IDs for distance metric isolation (Step 5).
+    new_labor_ids: set = set(new_labors_df["labor_id"].tolist())
+
     # Shuffle service order by seed
     service_ids = (
         new_labors_df[["service_id"]]
@@ -1486,6 +1528,10 @@ def run_insertion_worker(
         curr_end_time = None
         curr_end_pos = None
         svc_ok = True
+
+        # Pre-group moves by driver once per service attempt — replaces O(D) filter+sort
+        # calls inside commit_labor_insertion with a single groupby + O(1) dict lookups.
+        moves_by_driver = _build_moves_by_driver(tmp_moves, city, fecha)
 
         for _, labor in svc_labors.iterrows():
             is_transport = labor.get("labor_category") == "VEHICLE_TRANSPORTATION"
@@ -1514,15 +1560,21 @@ def run_insertion_worker(
                         early_buffer=early_buffer,
                         forced_start_time=curr_end_time,
                         selection_mode="random",
+                        random_state=seed,
                         time_method=time_method,
                         time_dict=time_dict,
                         model_params=model_params,
+                        moves_by_driver=moves_by_driver,
+                        home_cache=driver_home_cache,
                     )
                 )
 
                 if not success:
                     svc_ok = False
                     break
+
+                # Rebuild moves index after a successful insertion changes tmp_moves.
+                moves_by_driver = _build_moves_by_driver(tmp_moves, city, fecha)
 
             else:
                 # Non-transport: schedule relative to current position
@@ -1564,11 +1616,17 @@ def run_insertion_worker(
             working_moves = tmp_moves
             total_inserted += len(svc_labors)
 
-    total_dist = (
-        float(working_moves["distance_km"].sum())
-        if "distance_km" in working_moves.columns
-        else 0.0
-    )
+    # Distance metric: only count newly inserted labors so tiebreaking in
+    # select_best_result compares the variable part of the solution, not constant
+    # preassigned base distances that are identical across all iterations.
+    if "distance_km" in working_moves.columns:
+        total_dist = float(
+            working_moves.loc[
+                working_moves["labor_id"].isin(new_labor_ids), "distance_km"
+            ].sum()
+        )
+    else:
+        total_dist = 0.0
 
     return {
         "valid": True,

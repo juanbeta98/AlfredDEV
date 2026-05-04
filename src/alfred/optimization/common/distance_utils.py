@@ -50,6 +50,11 @@ def parse_point(s: str) -> tuple[float, float]:
     return lon, lat
 
 
+def _is_valid_coord(lon: float, lat: float) -> bool:
+    """Return False for NaN or the (0.0, 0.0) null-island placeholder."""
+    return not (math.isnan(lon) or math.isnan(lat) or (lon == 0.0 and lat == 0.0))
+
+
 def distance(
     p1: str,
     p2: str,
@@ -285,9 +290,14 @@ def travel_time_minutes(
         # If a precomputed time_dict was supplied but the pair is missing, do NOT fall back
         # to a live OSRM call — the matrix is supposed to be complete and a live call here
         # would negate the entire batch-precompute optimisation.
+        # Use speed-based fallback so callers never receive float("nan") as travel time,
+        # which would silently become 0.0 in _compute_service_end_time.
         if time_dict:
             d_km = dist_dict.get((p1, p2), float("nan"))
-            return d_km, float("nan"), dist_dict, time_dict
+            if math.isnan(d_km):
+                return d_km, float("nan"), dist_dict, time_dict
+            t_min = d_km / speed_kmh * 60.0
+            return d_km, t_min, dist_dict, time_dict
 
         # --- cache miss with no precomputed dict: call OSRM /route ---
         osrm_url = kwargs.get("osrm_url") or os.environ.get("OSRM_URL")
