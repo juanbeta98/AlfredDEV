@@ -51,7 +51,7 @@ class OptimizationSettings:
     )
 
     # execution controls
-    n_processes: Optional[int] = None
+    n_processes: Optional[int] = -1
     # pre-compute the full driver→labor distance matrix via OSRM Table API before iterations
     precompute_distances: bool = True
 

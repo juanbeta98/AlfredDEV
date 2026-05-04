@@ -90,10 +90,10 @@ class OfflineAlgoConfig:
     """
     distance_method: str = DEFAULT_DISTANCE_METHOD
     time_method: str = "osrm_times"    # "speed_based" | "osrm_times"
-    n_processes: Optional[int] = None
+    n_processes: Optional[int] = -1
     precompute_distances: bool = True  # use OSRM Table API to batch-compute all distances before iterations
     max_iterations_by_city: Optional[Dict[Any, int]] = None  # city_key -> max_iter
-    log_progress: bool = False  # show tqdm bar per city; set via request.json algorithm.params.log_progress
+    log_progress: bool = True  # show tqdm bar per city; set via request.json algorithm.params.log_progress
 
 
 class OfflineAlgorithm(OptimizationAlgorithm):
@@ -115,10 +115,10 @@ class OfflineAlgorithm(OptimizationAlgorithm):
         self.config = OfflineAlgoConfig(
             distance_method=params.get("distance_method") or DEFAULT_DISTANCE_METHOD,
             time_method=params.get("time_method", "osrm_times"),
-            n_processes=_resolve_n_processes(params.get("n_processes")),
+            n_processes=_resolve_n_processes(params.get("n_processes", -1)),
             precompute_distances=bool(params.get("precompute_distances", True)),
             max_iterations_by_city=max_iterations,
-            log_progress=bool(params.get("log_progress", False)),
+            log_progress=bool(params.get("log_progress", True)),
         )
 
     def solve(self, df: pd.DataFrame) -> Tuple[pd.DataFrame, Dict[str, Any], Dict[str, Any]]:

@@ -36,10 +36,10 @@ class ReactAlgoConfig:
     time_previous_freeze: int = 0          # minutes; 0 = only truly active labors are frozen
     distance_method: str = DEFAULT_DISTANCE_METHOD
     time_method: str = "osrm_times"        # "speed_based" | "osrm_times"
-    n_processes: Optional[int] = None
+    n_processes: Optional[int] = -1
     precompute_distances: bool = True
     max_iterations_by_city: Optional[Dict[Any, int]] = None
-    log_progress: bool = False
+    log_progress: bool = True
     minimize_disruption: bool = False      # when True, prefer solutions that change fewer driver assignments (lexicographic)
     disruption_weight: float = 0.0        # when > 0, score = distance × (1 + w × disruption_rate); 0 = no penalty
 
@@ -76,10 +76,10 @@ class ReactAlgorithm(OfflineAlgorithm):
             time_previous_freeze=int(params.get("time_previous_freeze", 0)),
             distance_method=params.get("distance_method") or DEFAULT_DISTANCE_METHOD,
             time_method=params.get("time_method", "osrm_times"),
-            n_processes=_resolve_n_processes(params.get("n_processes")),
+            n_processes=_resolve_n_processes(params.get("n_processes", -1)),
             precompute_distances=bool(params.get("precompute_distances", True)),
             max_iterations_by_city=max_iterations,
-            log_progress=bool(params.get("log_progress", False)),
+            log_progress=bool(params.get("log_progress", True)),
             minimize_disruption=bool(params.get("minimize_disruption", False)),
             disruption_weight=float(params.get("disruption_weight", 0.0)),
         )
