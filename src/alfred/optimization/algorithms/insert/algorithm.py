@@ -12,7 +12,7 @@ from alfred.optimization.algorithms.insert.insert_algorithms import (
     run_insertion_worker,
     select_best_result,
 )
-from alfred.optimization.common.distance_utils import batch_distance_matrix
+from alfred.optimization.common.distance_utils import batch_distance_matrix, _is_valid_coord
 from alfred.optimization.common.movements import _filter_drivers_by_city
 from alfred.optimization.common.utils import compute_workday_end
 from alfred.optimization.settings.solver_settings import DEFAULT_DISTANCE_METHOD
@@ -164,7 +164,9 @@ class InsertAlgorithm(OptimizationAlgorithm):
                         unit="iter",
                     ))
                 else:
-                    results = pool.map(_run_single_iter_shared, slim_args)
+                    results = list(pool.imap_unordered(
+                        _run_single_iter_shared, slim_args, chunksize=1
+                    ))
             return results
 
         # Sequential
@@ -277,14 +279,24 @@ class InsertAlgorithm(OptimizationAlgorithm):
             # all iterations start with a warm dist_dict and make zero OSRM HTTP calls.
             # When time_method="osrm_times", also fetch the duration matrix.
             time_dict: Dict[Any, Any] = {}
+            _t_osrm = perf_counter()
             if self.config.distance_method == "osrm" and self.config.precompute_distances:
                 _osrm_url = os.environ.get("OSRM_URL", "")
                 if _osrm_url:
                     _city_directorio = _filter_drivers_by_city(directorio_df, city_key)
-                    _driver_positions = [
-                        f"POINT ({row.longitud} {row.latitud})"
-                        for _, row in _city_directorio.iterrows()
-                    ]
+                    _invalid_drivers: List[Any] = []
+                    _driver_positions: List[str] = []
+                    for _, _row in _city_directorio.iterrows():
+                        _lon, _lat = float(_row.longitud), float(_row.latitud)
+                        if _is_valid_coord(_lon, _lat):
+                            _driver_positions.append(f"POINT ({_lon} {_lat})")
+                        else:
+                            _invalid_drivers.append(_row.get("driver_id", "<unknown>"))
+                    if _invalid_drivers:
+                        logger.warning(
+                            "osrm_precompute_skipped_invalid_drivers city=%s count=%d drivers=%s",
+                            city_key, len(_invalid_drivers), _invalid_drivers,
+                        )
                     _all_labors = pd.concat(
                         [f for f in [city_new, city_base_labors] if not f.empty],
                         ignore_index=True,
@@ -322,6 +334,11 @@ class InsertAlgorithm(OptimizationAlgorithm):
                             "osrm_precompute_failed city=%s — iterations will use per-call fallback",
                             city_key,
                         )
+
+            logger.info(
+                "osrm_precompute_elapsed city=%s ms=%.1f",
+                city_key, (perf_counter() - _t_osrm) * 1000,
+            )
 
             drivers = get_drivers(city_base_labors, directorio_df, city_key)
 
@@ -375,11 +392,17 @@ class InsertAlgorithm(OptimizationAlgorithm):
                 "model_params": model_params,
             }
 
+            _t_iter = perf_counter()
             iteration_results = self._run_iterations(
                 n_iter=n_iter,
                 seed_base=seed_base,
                 city_key=city_key,
                 shared=shared,
+            )
+            logger.info(
+                "iterations_elapsed city=%s n_iter=%d actual=%d ms=%.1f",
+                city_key, n_iter, len(iteration_results),
+                (perf_counter() - _t_iter) * 1000,
             )
 
             best = select_best_result(iteration_results)

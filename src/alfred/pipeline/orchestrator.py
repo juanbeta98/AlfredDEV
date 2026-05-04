@@ -577,7 +577,7 @@ def main() -> int:
         if has_preassigned.any() and settings.distance_method == "osrm":
             _osrm_url = os.environ.get("OSRM_URL", "")
             if _osrm_url:
-                from alfred.optimization.common.distance_utils import batch_distance_matrix
+                from alfred.optimization.common.distance_utils import batch_distance_matrix, _is_valid_coord
                 from alfred.optimization.common.movements import _filter_drivers_by_city
 
                 _precomp_dist_dict: Dict[str, Any] = {
@@ -595,6 +595,7 @@ def main() -> int:
                         f"POINT ({row.longitud} {row.latitud})"
                         for _, row in _city_dir.iterrows()
                         if pd.notna(row.get("latitud")) and pd.notna(row.get("longitud"))
+                        and _is_valid_coord(float(row.get("longitud")), float(row.get("latitud")))
                     ]
                     _dept_rows = input_df[
                         input_df["department_code"].astype(str) == _dept_str
