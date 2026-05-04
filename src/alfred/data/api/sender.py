@@ -168,6 +168,8 @@ class ResultSender:
                     payload["data"] = []
                 elif isinstance(data, dict) and ResultSender._looks_like_service_payload(data):
                     payload["data"] = [data]
+                if request_id and not payload.get("request_id"):
+                    payload["request_id"] = request_id
                 return payload
 
             if ResultSender._looks_like_service_payload(results):
