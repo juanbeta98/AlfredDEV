@@ -314,7 +314,7 @@ def build_labor_editor_table(base: ScenarioBase) -> pd.DataFrame:
 
     Columns
     -------
-    labor_id, service_id, labor_type, actual_start (ISO str),
+    labor_id, service_id, labor_sequence, labor_type, actual_start (ISO str),
     original_driver, new_driver,
     labor_distance_km, driver_move_distance_km, is_infeasible,
     original_assigned_driver
@@ -324,6 +324,7 @@ def build_labor_editor_table(base: ScenarioBase) -> pd.DataFrame:
         records.append({
             "labor_id":                r["labor_id"],
             "service_id":              r["service_id"],
+            "labor_sequence":          r.get("service_labor_index", 0),
             "labor_type":              r["labor_type"],
             "actual_start":            r["actual_start"].isoformat() if r["actual_start"] else None,
             "original_driver":         r["driver_id"],
@@ -335,8 +336,8 @@ def build_labor_editor_table(base: ScenarioBase) -> pd.DataFrame:
         })
 
     df = pd.DataFrame(records)
-    # Sort by actual_start then service_id so co-service labors appear adjacent
-    df = df.sort_values(["actual_start", "service_id"], ignore_index=True)
+    # Sort by actual_start then service_id / labor_sequence so co-service labors appear adjacent
+    df = df.sort_values(["actual_start", "service_id", "labor_sequence"], ignore_index=True)
     return df
 
 
