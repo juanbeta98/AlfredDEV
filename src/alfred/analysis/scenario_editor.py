@@ -9,6 +9,8 @@ Public API
 ScenarioBase                Dataclass: loaded base solution ready for editing.
 ScenarioSet                 Dataclass: N loaded scenarios ready for comparison.
 load_scenario_base          Load a single solution for Section 1 editing.
+load_driver_names           Build {driver_id: "First Last"} from driver directory JSON.
+build_service_display_info  Build rich display metadata for each service/labor.
 build_labor_editor_table    Build the editable assignment DataFrame.
 apply_reassignments         Apply {labor_id → new_driver_id} to flat rows.
 reconstruct_scenario        Recompute distances and timeline after reassignment.
@@ -98,6 +100,82 @@ def _build_driver_home_lookup(driver_directory_path: Optional[Path]) -> Dict[str
     }
     print(f"[driver_home_lookup] {len(lookup)} drivers loaded")
     return lookup
+
+
+# ---------------------------------------------------------------------------
+# Public helpers for rich display metadata (used by the widget UI)
+# ---------------------------------------------------------------------------
+
+
+def load_driver_names(driver_directory_path: Optional[Path]) -> Dict[str, str]:
+    """Return {driver_id_str: "First Last"} from a driver directory JSON.
+
+    Falls back to the driver ID string when firstName/lastName are absent.
+    Returns an empty dict when the file does not exist.
+    """
+    if driver_directory_path is None or not driver_directory_path.exists():
+        return {}
+    raw = json.loads(driver_directory_path.read_text(encoding="utf-8"))
+    items: List[Dict[str, Any]] = (
+        raw if isinstance(raw, list)
+        else raw.get("results", raw.get("data", []))
+    )
+    names: Dict[str, str] = {}
+    for item in items:
+        driver_id = item.get("id")
+        if driver_id is None:
+            continue
+        first = (item.get("firstName") or "").strip()
+        last = (item.get("lastName") or "").strip()
+        full = f"{first} {last}".strip() if (first or last) else str(driver_id)
+        names[str(driver_id)] = full
+    return names
+
+
+def build_service_display_info(
+    input_snapshot_path: Optional[Path],
+) -> Dict[Any, Dict[str, Any]]:
+    """Build rich display metadata for each labor from the optimization input snapshot.
+
+    Returns a dict keyed by labor_id (int or str) with:
+        labor_name     : human-readable labor name (e.g. "Alfred Initial Transport")
+        service_id     : parent service ID
+        from_address   : start address name string
+        to_address     : end address name string
+        schedule_date  : ISO schedule date string from the input
+        labor_type     : labor_type string
+
+    Returns an empty dict when the file does not exist or has no data.
+    """
+    if input_snapshot_path is None or not input_snapshot_path.exists():
+        return {}
+    raw = json.loads(input_snapshot_path.read_text(encoding="utf-8"))
+    services: List[Dict[str, Any]] = (
+        raw if isinstance(raw, list)
+        else raw.get("data", raw.get("results", []))
+    )
+    info: Dict[Any, Dict[str, Any]] = {}
+    for svc in services:
+        service_id = svc.get("service_id")
+        from_addr = (svc.get("start_address") or {}).get("name", "")
+        to_addr = (svc.get("end_address") or {}).get("name", "")
+        # Input snapshot uses snake_case key
+        labors = svc.get("service_labors") or svc.get("serviceLabors") or []
+        for lab in labors:
+            lid = lab.get("id")
+            if lid is None:
+                continue
+            info[lid] = {
+                "labor_name":    lab.get("labor_name") or lab.get("labor_type") or "",
+                "service_id":    service_id,
+                "from_address":  from_addr,
+                "to_address":    to_addr,
+                "schedule_date": lab.get("schedule_date", ""),
+                "labor_type":    lab.get("labor_type", ""),
+            }
+            # Also key by string for safe cross-type lookup
+            info[str(lid)] = info[lid]
+    return info
 
 
 def _load_and_prepare_single(
