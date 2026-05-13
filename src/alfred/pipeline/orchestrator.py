@@ -173,6 +173,8 @@ def main() -> int:
     )
 
     raw_input: dict[str, Any] = {}
+    raw_drivers: list | None = None
+    schedule_snapshot: dict[str, Any] | None = None
     input_df = None
     metadata: Dict[str, Any] = {}
     validation_report: Dict[str, Any] = {}
@@ -219,6 +221,8 @@ def main() -> int:
             with log_step("load_local_input", path=local_path):
                 raw_input = load_local_input(local_path, write_debug_json=True, run_id=artifact_run_id)
             _stage_t["input_acquisition"] = round(time.perf_counter() - _t0, 3)
+
+        schedule_snapshot = dict(raw_input) if raw_input else None
 
         # -----------------------------------------------------------
         # SERVICE MASK (testing only) — remove this block and unset
@@ -400,6 +404,7 @@ def main() -> int:
     settings = request_settings or OptimizationSettings()
     driver_directory_df = pd.DataFrame()
     driver_directory_source = None
+    driver_snapshot: list | None = None
 
     try:
         schedule_date = None
@@ -435,6 +440,8 @@ def main() -> int:
             except Exception as exc:
                 logger.exception("driver_directory_api_failed")
                 raise
+
+            driver_snapshot = list(raw_drivers) if raw_drivers else None
 
             if not raw_drivers:
                 logger.error("driver_directory_empty_from_api")
@@ -1010,6 +1017,8 @@ def main() -> int:
                     },
                     request_id=request_id,
                     status="completed",
+                    schedule_snapshot=schedule_snapshot,
+                    driver_snapshot=driver_snapshot,
                 )
             _stage_t["format_output"] = round(time.perf_counter() - _t0, 3)
 
