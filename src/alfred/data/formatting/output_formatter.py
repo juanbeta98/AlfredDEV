@@ -58,6 +58,8 @@ class OutputFormatter:
         metadata: Dict[str, Any] | None = None,
         request_id: str | None = None,
         status: str = "completed",
+        schedule_snapshot: Dict[str, Any] | None = None,
+        driver_snapshot: list | None = None,
     ) -> Dict[str, Any] | Any:
         """
         Format optimization output into the payload expected by the API.
@@ -67,6 +69,8 @@ class OutputFormatter:
             metadata: Unused for now (kept for compatibility)
             request_id: Unused for now (kept for compatibility)
             status: Unused for now (kept for compatibility)
+            schedule_snapshot: Raw schedule payload received from the API, before any preprocessing.
+            driver_snapshot: Raw driver directory payload received from the API, before any preprocessing.
 
         Returns:
             JSON-serializable payload matching API contract directly.
@@ -80,26 +84,28 @@ class OutputFormatter:
             return results
 
         if isinstance(results, pd.DataFrame):
-            return {"data": OutputFormatter._format_results_df(results)}
-
-        if results is None:
-            return {"data": []}
-
-        if isinstance(results, dict) and "data" in results:
+            payload: Dict[str, Any] = {"data": OutputFormatter._format_results_df(results)}
+        elif results is None:
+            payload = {"data": []}
+        elif isinstance(results, dict) and "data" in results:
             payload = dict(results)
             if isinstance(payload.get("data"), dict):
                 payload["data"] = [payload["data"]]
             elif payload.get("data") is None:
                 payload["data"] = []
-            return payload
+        elif isinstance(results, list):
+            payload = {"data": results}
+        elif isinstance(results, dict) and OutputFormatter._looks_like_service_payload(results):
+            payload = {"data": [results]}
+        else:
+            return results
 
-        if isinstance(results, list):
-            return {"data": results}
+        if schedule_snapshot is not None:
+            payload["schedule_snapshot"] = schedule_snapshot
+        if driver_snapshot is not None:
+            payload["driver_snapshot"] = driver_snapshot
 
-        if isinstance(results, dict) and OutputFormatter._looks_like_service_payload(results):
-            return {"data": [results]}
-
-        return results
+        return payload
 
     @staticmethod
     def _format_results_df(df: pd.DataFrame) -> list[Dict[str, Any]]:
