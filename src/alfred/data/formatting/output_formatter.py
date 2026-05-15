@@ -67,16 +67,16 @@ class OutputFormatter:
         Args:
             results: Optimization output (DataFrame, list, dict)
             metadata: Unused for now (kept for compatibility)
-            request_id: Unused for now (kept for compatibility)
             status: Unused for now (kept for compatibility)
-            schedule_snapshot: Raw schedule payload received from the API, before any preprocessing.
-            driver_snapshot: Raw driver directory payload received from the API, before any preprocessing.
+            request_id: Request identifier included as top-level key.
+            schedule_snapshot: Raw schedule payload from the API (emitted as "services").
+            driver_snapshot: Raw driver directory from the API (emitted as "alfreds").
 
         Returns:
-            JSON-serializable payload matching API contract directly.
+            JSON-serializable payload matching API contract:
+            {"data": [...], "request_id": "...", "alfreds": [...], "services": [...]}
         """
         _ = metadata
-        _ = request_id
         _ = status
 
         # Preserve already-structured non-completed payloads, e.g. failure reports.
@@ -100,10 +100,12 @@ class OutputFormatter:
         else:
             return results
 
-        if schedule_snapshot is not None:
-            payload["schedule_snapshot"] = schedule_snapshot
+        if request_id:
+            payload["request_id"] = request_id
         if driver_snapshot is not None:
-            payload["driver_snapshot"] = driver_snapshot
+            payload["alfreds"] = driver_snapshot
+        if schedule_snapshot is not None:
+            payload["services"] = schedule_snapshot.get("data", [])
 
         return payload
 
