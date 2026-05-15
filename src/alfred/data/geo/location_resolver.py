@@ -81,7 +81,6 @@ class LocationResolver:
         cls,
         *,
         cities_path: str | Path | None = None,
-        address_path: str | Path | None = None,
     ) -> "LocationResolver":
         city_code_to_location: Dict[str, CanonicalLocation] = {}
         city_by_department_code_and_name: Dict[Tuple[str, str], str] = {}
@@ -102,16 +101,6 @@ class LocationResolver:
                 )
             else:
                 logger.warning("cities_crosswalk_not_found path=%s", cities_file)
-
-        if address_path:
-            address_file = Path(address_path)
-            if address_file.exists():
-                cls._load_address_csv_fallback(
-                    address_file,
-                    city_code_to_location=city_code_to_location,
-                )
-            else:
-                logger.warning("address_crosswalk_not_found path=%s", address_file)
 
         department_name_to_code: Dict[str, str] = {}
         for label, codes in department_name_to_codes.items():
@@ -181,38 +170,6 @@ class LocationResolver:
 
                 for alias in _iter_city_aliases(city_name, display_city):
                     city_alias_to_city_codes.setdefault(alias, set()).add(city_code)
-
-    @staticmethod
-    def _load_address_csv_fallback(
-        path: Path,
-        *,
-        city_code_to_location: Dict[str, CanonicalLocation],
-    ) -> None:
-        with path.open("r", encoding="utf-8", newline="") as handle:
-            reader = csv.DictReader(handle)
-            for row in reader:
-                city_code = _clean_text(row.get("city"))
-                department_code = _clean_text(row.get("department_code"))
-                if city_code is None or department_code is None:
-                    continue
-
-                current = city_code_to_location.get(city_code)
-                if current is None:
-                    city_code_to_location[city_code] = CanonicalLocation(
-                        city_code=city_code,
-                        city_name=None,
-                        department_code=department_code,
-                        department_name=None,
-                    )
-                    continue
-
-                if current.department_code is None:
-                    city_code_to_location[city_code] = CanonicalLocation(
-                        city_code=current.city_code,
-                        city_name=current.city_name,
-                        department_code=department_code,
-                        department_name=current.department_name,
-                    )
 
     def resolve(
         self,
@@ -373,14 +330,9 @@ class LocationResolver:
 @lru_cache(maxsize=4)
 def get_location_resolver(
     cities_path: str | None = None,
-    address_path: str | None = None,
 ) -> LocationResolver:
     repo_root = Path(__file__).resolve().parent.parent.parent.parent.parent
     resolved_cities = cities_path or str(repo_root / "data" / "master" / "cities.csv")
-    resolved_address = address_path or str(
-        repo_root / "data" / "examples" / "raw_files" / "address.csv"
-    )
     return LocationResolver.from_files(
         cities_path=resolved_cities,
-        address_path=resolved_address,
     )

@@ -155,10 +155,7 @@ class ResultSender:
 
         # Preserve failure reporting payloads.
         if isinstance(results, dict) and str(results.get("status", "")).lower() == "failed":
-            payload = dict(results)
-            if request_id and not payload.get("request_id"):
-                payload["request_id"] = request_id
-            return payload
+            return dict(results)
 
         if isinstance(results, dict):
             if "data" in results:
@@ -168,8 +165,6 @@ class ResultSender:
                     payload["data"] = []
                 elif isinstance(data, dict) and ResultSender._looks_like_service_payload(data):
                     payload["data"] = [data]
-                if request_id and not payload.get("request_id"):
-                    payload["request_id"] = request_id
                 return payload
 
             if ResultSender._looks_like_service_payload(results):
