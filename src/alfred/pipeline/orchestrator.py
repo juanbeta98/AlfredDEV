@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 import time
@@ -223,6 +224,8 @@ def main() -> int:
             _stage_t["input_acquisition"] = round(time.perf_counter() - _t0, 3)
 
         schedule_snapshot = dict(raw_input) if raw_input else None
+        if schedule_snapshot is not None:
+            log_info("input_snapshot", payload=json.dumps(schedule_snapshot, default=str))
 
         # -----------------------------------------------------------
         # SERVICE MASK (testing only) — remove this block and unset
@@ -442,6 +445,8 @@ def main() -> int:
                 raise
 
             driver_snapshot = list(raw_drivers) if raw_drivers else None
+            if driver_snapshot is not None:
+                log_info("driver_snapshot", payload=json.dumps(driver_snapshot, default=str))
 
             if not raw_drivers:
                 logger.error("driver_directory_empty_from_api")
