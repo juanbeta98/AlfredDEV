@@ -299,7 +299,12 @@ def main() -> int:
 
             _t0 = time.perf_counter()
             with log_step("load_local_input", path=local_path):
-                raw_input = load_local_input(local_path, write_debug_json=True, run_id=artifact_run_id)
+                raw_input = load_local_input(
+                    local_path,
+                    write_debug_json=not Config.DISABLE_FILE_OUTPUT,
+                    debug_output_path=run_dir / "input" / "processed_input.json" if run_dir else None,
+                    run_id=artifact_run_id,
+                )
             _stage_t["input_acquisition"] = round(time.perf_counter() - _t0, 3)
 
         schedule_snapshot = dict(raw_input) if raw_input else None

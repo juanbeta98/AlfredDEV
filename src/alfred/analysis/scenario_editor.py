@@ -229,6 +229,8 @@ def _load_and_prepare_single(
         params.alfred_speed_kmh,
         model_params=params,
         dist_method=distance_method,
+        points_lookup=pl,
+        driver_home_lookup=driver_home_lookup,
     )
 
     return services, rows, segments, pl
