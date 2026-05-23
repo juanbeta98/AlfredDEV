@@ -73,6 +73,86 @@ from alfred.pipeline.diagnostics import (
 logger = logging.getLogger(__name__)
 set_pipeline_logger(logger)
 
+_VALIDATION_SAMPLE_SIZE = 10
+
+
+def _emit_error_detail(label: str, payload: dict) -> None:
+    import json
+    block = json.dumps({"alfred_error_detail": label, **payload}, ensure_ascii=False, default=str)
+    print(f"ALFRED_ERROR_DETAIL_BEGIN\n{block}\nALFRED_ERROR_DETAIL_END", file=sys.stderr, flush=True)
+
+
+def _build_data_validation_error_detail(
+    exc: Exception,
+    invalid_df: Any,
+    validation_report: Any,
+    raw_input: Any,
+    raw_drivers: Any,
+) -> dict:
+    detail: dict = {
+        "error": "INPUT_VALIDATION_FAILED",
+        "error_message": str(exc),
+        "summary": validation_report or {},
+    }
+
+    if isinstance(invalid_df, pd.DataFrame) and not invalid_df.empty:
+        sample = invalid_df.head(_VALIDATION_SAMPLE_SIZE)
+        rows = []
+        for _, row in sample.iterrows():
+            rows.append({
+                "labor_id": row.get("labor_id"),
+                "service_id": row.get("service_id"),
+                "schedule_date": str(row.get("schedule_date", "")),
+                "validation_errors": row.get("_validation_errors", []),
+            })
+        detail["invalid_sample"] = rows
+        detail["invalid_sample_size"] = len(rows)
+        detail["total_invalid"] = len(invalid_df)
+    else:
+        detail["invalid_sample"] = []
+        detail["invalid_sample_size"] = 0
+        detail["total_invalid"] = 0
+
+    detail["raw_input"] = raw_input or {}
+    detail["raw_drivers"] = raw_drivers or []
+    return detail
+
+
+def _build_solution_validation_error_detail(
+    exc: Exception,
+    solution_validation_report: Any,
+    solution_validation_issues: Any,
+    raw_input: Any,
+    raw_drivers: Any,
+) -> dict:
+    detail: dict = {
+        "error": "SOLUTION_VALIDATION_FAILED",
+        "error_message": str(exc),
+        "report": solution_validation_report or {},
+    }
+
+    if isinstance(solution_validation_issues, pd.DataFrame) and not solution_validation_issues.empty:
+        report = solution_validation_report or {}
+        blocking_set = set(report.get("blocking_checks", ["driver_overlap", "time_discontinuity"]))
+        if "check" in solution_validation_issues.columns:
+            blocking_df = solution_validation_issues[solution_validation_issues["check"].isin(blocking_set)]
+        else:
+            blocking_df = solution_validation_issues
+        sample = blocking_df.head(_VALIDATION_SAMPLE_SIZE)
+        detail["blocking_issues_sample"] = sample.to_dict(orient="records")
+        detail["blocking_issues_sample_size"] = len(sample)
+        detail["total_blocking_issues"] = len(blocking_df)
+        detail["total_issues"] = len(solution_validation_issues)
+    else:
+        detail["blocking_issues_sample"] = []
+        detail["blocking_issues_sample_size"] = 0
+        detail["total_blocking_issues"] = 0
+        detail["total_issues"] = 0
+
+    detail["raw_input"] = raw_input or {}
+    detail["raw_drivers"] = raw_drivers or []
+    return detail
+
 
 def _validate_license() -> None:
     pass  # License enforcement is injected by build_prod.sh in production builds.
@@ -390,6 +470,13 @@ def main() -> int:
 
     except Exception as exc:
         logger.exception("input_validation_failed")
+        _emit_error_detail("INPUT_VALIDATION_FAILED", _build_data_validation_error_detail(
+            exc=exc,
+            invalid_df=invalid_df,
+            validation_report=validation_report,
+            raw_input=raw_input,
+            raw_drivers=raw_drivers,
+        ))
         report_failure_if_possible(
             request_id=request_id,
             error="INPUT_VALIDATION_FAILED",
@@ -959,6 +1046,13 @@ def main() -> int:
 
     except Exception as exc:
         logger.exception("solution_validation_failed")
+        _emit_error_detail("SOLUTION_VALIDATION_FAILED", _build_solution_validation_error_detail(
+            exc=exc,
+            solution_validation_report=solution_validation_report,
+            solution_validation_issues=solution_validation_issues,
+            raw_input=raw_input,
+            raw_drivers=raw_drivers,
+        ))
         report_failure_if_possible(
             request_id=request_id,
             error="SOLUTION_VALIDATION_FAILED",
