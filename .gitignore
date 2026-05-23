@@ -18,6 +18,7 @@ releases/envs/
 res/
 data/api_snapshots
 data/runs
+data/historic_analysis
 tests/
 experiments/
 scenarios/
