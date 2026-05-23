@@ -240,7 +240,7 @@ def _parse_str(value: Any) -> Optional[str]:
     return str(value)
 
 
-DEFAULT_KEEP_PAYLOAD_ASSIGNMENT: bool = False
+DEFAULT_KEEP_PAYLOAD_ASSIGNMENT: bool = True
 
 
 def _parse_bool_flag(value: Any, *, default: bool) -> bool:
