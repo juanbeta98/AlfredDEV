@@ -99,6 +99,18 @@ def build_settings_from_request(payload: RequestPayload) -> OptimizationSettings
     return OptimizationSettings(**kwargs)
 
 
+def build_settings_from_request_prod(payload: RequestPayload) -> OptimizationSettings:
+    """
+    Production variant: algorithm.params from request.json are silently ignored.
+
+    Customers must not override solver parameters. Only algorithm.name flows
+    through. This function is swapped in by build_prod.sh at build time.
+    Development builds continue to use build_settings_from_request.
+    """
+    algo_name = payload.algorithm.name.strip().upper()
+    return OptimizationSettings(algorithm=algo_name)
+
+
 def apply_request_filters(
     df: pd.DataFrame,
     filters: RequestFilters,
