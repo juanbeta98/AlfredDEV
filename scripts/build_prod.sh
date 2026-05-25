@@ -330,6 +330,32 @@ else
     exit 1
 fi
 
+# Patch orchestrator.py: lock keep_payload_assignment — bypass resolve_keep_payload_assignment
+MAIN_FILE="${OUTPUT_DIR}/src/alfred/pipeline/orchestrator.py"
+if [[ -f "${MAIN_FILE}" ]]; then
+    python3 - "${MAIN_FILE}" << 'PATCHSCRIPT'
+import sys
+
+path = sys.argv[1]
+text = open(path).read()
+
+old = "        keep_payload_assignment = resolve_keep_payload_assignment(request_payload)"
+new = "        keep_payload_assignment = DEFAULT_KEEP_PAYLOAD_ASSIGNMENT"
+
+if old not in text:
+    print(f"ERROR: expected call not found in {path}", file=sys.stderr)
+    print(f"  Expected: {old!r}", file=sys.stderr)
+    sys.exit(1)
+
+patched = text.replace(old, new, 1)
+open(path, "w").write(patched)
+print(f"  Patched: {path}")
+PATCHSCRIPT
+else
+    echo "ERROR: orchestrator.py not found at ${MAIN_FILE}" >&2
+    exit 1
+fi
+
 # Patch pipeline entry points: inject _validate_license() enforcement — PROD only.
 # DEV source has a no-op stub; this replaces it with the real enforcement body.
 if [[ "${BUILD_TYPE}" != "prod" ]]; then
