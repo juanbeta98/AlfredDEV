@@ -211,9 +211,15 @@ def load_and_prepare(
             tiempo_finalizacion_min=params.tiempo_finalizacion_min,
         )
 
+    # Ensure points_lookup exists before timeline reconstruction.
+    if points_lookup is None:
+        _, points_lookup, _ = build_coord_lookups(services_a)
+
     # Reconstruct timelines
-    segments_a = reconstruct_timeline(rows_a, speed_kmh, model_params=params, dist_method=distance_method)
-    segments_b = reconstruct_timeline(rows_b, speed_kmh, model_params=params, dist_method=distance_method)
+    segments_a = reconstruct_timeline(rows_a, speed_kmh, model_params=params, dist_method=distance_method,
+                                      points_lookup=points_lookup, driver_home_lookup=driver_home_lookup)
+    segments_b = reconstruct_timeline(rows_b, speed_kmh, model_params=params, dist_method=distance_method,
+                                      points_lookup=points_lookup, driver_home_lookup=driver_home_lookup)
 
     drivers_a    = sorted({r["driver_id"] for r in rows_a if r["driver_id"] is not None})
     drivers_b    = sorted({r["driver_id"] for r in rows_b if r["driver_id"] is not None})
@@ -221,11 +227,6 @@ def load_and_prepare(
     all_services = sorted(
         {str(r["service_id"]) for r in rows_a + rows_b if r["service_id"] is not None}
     )
-
-    # Build points_lookup from payload addresses if input_file didn't provide one.
-    # This ensures route-map coordinate data is always available.
-    if points_lookup is None:
-        _, points_lookup, _ = build_coord_lookups(services_a)
 
     print(f"sol_a: {len(rows_a)} labors | {len(drivers_a)} drivers | {len(segments_a)} segments")
     print(f"sol_b: {len(rows_b)} labors | {len(drivers_b)} drivers | {len(segments_b)} segments")

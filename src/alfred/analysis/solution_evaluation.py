@@ -10,6 +10,7 @@ filter_by_date          Drop labors before a planning date.
 flatten_labors          Flatten service/labor hierarchy → flat labor rows.
 build_coord_lookups     Compute per-labor distance and endpoint lookups.
 recompute_move_distances Compute driver-move distances from coordinates.
+infer_missing_durations Fill duration_min for labors where addData was absent.
 reconstruct_timeline    Reconstruct FREE_TIME / DRIVER_MOVE / VT segments per driver.
 compute_payload_summary Aggregate KPIs from flat labor rows.
 build_gantt_figure      Plotly Gantt chart — driver timelines.
@@ -377,6 +378,20 @@ def infer_missing_durations(
             r["duration_min"] = total
             r["actual_end"] = r["actual_start"] + timedelta(minutes=total)
 
+    # Non-VT labors: use estimated_time from the API payload when present.
+    for r in rows:
+        if (
+            r["duration_min"] == 0
+            and r["actual_start"] is not None
+            and r.get("labor_type") not in _VT_LABOR_TYPES
+            and r.get("labor_type") is not None
+        ):
+            est = r.get("estimated_time_min")
+            if est is not None:
+                total = float(est)
+                r["duration_min"] = total
+                r["actual_end"] = r["actual_start"] + timedelta(minutes=total)
+
 
 # ---------------------------------------------------------------------------
 # Labor flattening
@@ -483,6 +498,7 @@ def flatten_labors(
                 "original_assigned_driver": (preassigned_lookup or {}).get(labor_id) or add_data.get("original_assigned_driver") or None,
                 "map_start_wkt":           add_data.get("map_start_point") or None,
                 "map_end_wkt":             add_data.get("map_end_point") or None,
+                "estimated_time_min":      labor.get("estimated_time"),
             })
 
     return rows, warnings
@@ -498,13 +514,28 @@ def reconstruct_timeline(
     speed_kmh: float,
     model_params: Optional[ModelParams] = None,
     dist_method: str = DEFAULT_DISTANCE_METHOD,
+    points_lookup: Optional[Dict[Any, Tuple[Optional[str], Optional[str]]]] = None,
+    driver_home_lookup: Optional[Dict[str, str]] = None,
 ) -> List[Dict[str, Any]]:
     """Reconstruct a 3-segment timeline per driver from flat labor rows.
 
     For each assigned labor (sorted chronologically per driver):
       1. FREE_TIME              — idle gap before the next move begins
-      2. DRIVER_MOVE            — travel inferred from driver_move_distance_km / speed_kmh
+      2. DRIVER_MOVE            — travel via compute_driver_move (OSRM + walk-buffer model)
       3. VEHICLE_TRANSPORTATION — actual_start to actual_end
+
+    When model_params and coordinates are available, DRIVER_MOVE duration is computed
+    via compute_driver_move() using OSRM car time and the walk-buffer + transit-slowdown
+    model.  Falls back to move_dist / speed_kmh * 60 when OSRM is unavailable.
+
+    Parameters
+    ----------
+    points_lookup : labor_id -> (start_wkt, end_wkt).  Used to resolve coordinates
+        for labors whose map_start_wkt/map_end_wkt are absent (e.g. API snapshots
+        that have no addData).  addData coordinates take precedence when present.
+    driver_home_lookup : driver_id -> home WKT.  When provided, prev_pos_wkt is
+        initialised to the driver's home for the first labor, enabling a proper
+        home→first-service DRIVER_MOVE segment.
 
     Returns a list of segment dicts with keys:
       driver_id, labor_id, service_id, segment_type,
@@ -519,15 +550,22 @@ def reconstruct_timeline(
     for driver_id, labors in by_driver.items():
         labors_sorted = sorted(labors, key=lambda x: x["actual_start"])
         prev_end: Optional[datetime] = None
-        prev_pos_wkt: Optional[str] = None
+        prev_pos_wkt: Optional[str] = (
+            driver_home_lookup.get(str(driver_id)) if driver_home_lookup else None
+        )
 
         for labor in labors_sorted:
             actual_start: datetime = labor["actual_start"]
             actual_end: datetime = labor["actual_end"]
             move_dist: float = labor.get("driver_move_distance_km") or 0.0
 
-            if move_dist > 0 and model_params is not None and prev_pos_wkt is not None:
-                start_wkt = labor.get("map_start_wkt") or labor.get("map_start_point")
+            # Resolve WKT: prefer addData coordinates (solver-exact), fall back to
+            # points_lookup (from service addresses — used for API snapshots).
+            _pl_start, _pl_end = (points_lookup or {}).get(labor["labor_id"], (None, None))
+            start_wkt = labor.get("map_start_wkt") or _pl_start
+            end_wkt   = labor.get("map_end_wkt")   or _pl_end
+
+            if move_dist > 0 and model_params is not None and prev_pos_wkt is not None and start_wkt is not None:
                 _, move_min = compute_driver_move(
                     prev_pos_wkt, start_wkt, model_params,
                     dist_method=dist_method,
@@ -583,7 +621,7 @@ def reconstruct_timeline(
             })
 
             prev_end = actual_end
-            prev_pos_wkt = labor.get("map_end_wkt") or labor.get("map_end_point")
+            prev_pos_wkt = end_wkt
 
     return segments
 
