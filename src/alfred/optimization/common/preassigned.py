@@ -597,7 +597,7 @@ def reconstruct_preassigned_state(
 
                 is_first_labor = _is_first_labor_sequence(row.get("labor_sequence"))
                 if is_first_labor and pd.notna(sched):
-                    feasible_window_end = sched + timedelta(minutes=tiempo_gracia)
+                    feasible_window_end = sched
                     assigned_df.loc[idx, "feasible_window_end"] = feasible_window_end
                     minutes_after_window = _delay_minutes(arrival, feasible_window_end)
                     if minutes_after_window is not None and minutes_after_window > 0:

@@ -331,7 +331,7 @@ def get_candidate_drivers(
     
     sched = row['schedule_date']
     early = prev_end or (sched - timedelta(minutes=tiempo_previo))
-    late  = (prev_end + timedelta(minutes=tiempo_gracia)) if prev_end else (sched + timedelta(minutes=tiempo_gracia))
+    late  = prev_end if prev_end else sched
     
     cands: List[Candidate] = []
     for name, drv in drivers.items():
@@ -390,7 +390,7 @@ def _get_overtime_fallback(
     kwargs["return_dist_dict"] = True
     dist_dict_local: DistDict = dist_dict or {}
 
-    late = row['schedule_date'] + timedelta(minutes=tiempo_gracia)
+    late = row['schedule_date']
 
     best: Optional[Dict[str, Any]] = None
     best_overtime: float = float('inf')

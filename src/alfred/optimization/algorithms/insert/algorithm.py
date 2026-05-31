@@ -365,7 +365,7 @@ class InsertAlgorithm(OptimizationAlgorithm):
             tiempo_finalizacion: float = (
                 model_params.tiempo_finalizacion_min if model_params else 5.0
             )
-            tiempo_gracia: float = model_params.tiempo_gracia_min if model_params else 30.0
+            tiempo_gracia: float = model_params.tiempo_gracia_min if model_params else 0.0
             early_buffer: float = model_params.tiempo_previo_min if model_params else 30.0
             dur_df: Optional[pd.DataFrame] = duraciones_df if not duraciones_df.empty else None
 

@@ -204,7 +204,7 @@ def _can_reach_next_labor(
         schedule_date=next_start_time,
         early_buffer=early_buffer,
     )
-    feasible = next_real <= next_start_time + timedelta(minutes=grace_time)
+    feasible = next_real <= next_start_time
     return feasible, next_real, next_move_start, dist_km, travel_min
 
 
@@ -386,7 +386,7 @@ def _simulate_downstream_shift(
             **kwargs,
         )
 
-        if next_arrival > next_start_time + timedelta(minutes=TIEMPO_GRACIA):
+        if next_arrival > next_start_time:
             return False, []
 
         next_real_arrival, next_move_start = _adjust_for_early_arrival(
@@ -813,8 +813,7 @@ def evaluate_driver_feasibility(
             **kwargs,
         )
 
-        # Fixed: was timedelta(TIEMPO_GRACIA) which is days, not minutes
-        if new_arrival > new_start_time + timedelta(minutes=TIEMPO_GRACIA):
+        if new_arrival > new_start_time:
             infeasible_log = "Driver would not arrive on time to the new labor."
             break
 
@@ -971,8 +970,7 @@ def evaluate_driver_feasibility(
             **kwargs,
         )
 
-        latest_arrival = new_labor["schedule_date"] + timedelta(minutes=TIEMPO_GRACIA)
-        if would_arrive > latest_arrival:
+        if would_arrive > new_labor["schedule_date"]:
             infeasible_log = "Driver would arrive too late to the new labor."
             return feasible, infeasible_log, insertion_plan
 
