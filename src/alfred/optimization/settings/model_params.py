@@ -35,7 +35,7 @@ class ModelParams:
     # Times (minutes)
     tiempo_previo_min: int = 0        # minutes before schedule_date
     # tiempo_previo_min: int = 30        # minutes before schedule_date
-    tiempo_gracia_min: int = 15
+    tiempo_gracia_min: int = 0
     tiempo_alistar_min: int = 30
     tiempo_other_min: int = 30
     tiempo_finalizacion_min: int = 15

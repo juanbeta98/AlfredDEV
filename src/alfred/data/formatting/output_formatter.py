@@ -171,7 +171,6 @@ class OutputFormatter:
     @staticmethod
     def _labor_schedule_date(row: pd.Series) -> str | None:
         for col in (
-            "actual_start",
             "payload_labor_schedule_date",
             "schedule_date",
             "service_schedule_date",
