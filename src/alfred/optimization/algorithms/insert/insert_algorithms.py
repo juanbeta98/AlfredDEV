@@ -26,7 +26,7 @@ Bug fixes vs. the original INSERT_algorithm.py reference:
 """
 import logging
 import math
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
@@ -89,6 +89,61 @@ def _get_driver_home_pos(
         if pd.notna(lat) and pd.notna(lon):
             return f"POINT ({lon} {lat})"
     return None
+
+
+def _get_driver_shift(
+    directorio_df: pd.DataFrame,
+    driver: str,
+    scheduling_date: pd.Timestamp,
+) -> Tuple[Optional[pd.Timestamp], Optional[pd.Timestamp]]:
+    """Return (shift_start_dt, shift_end_dt) as tz-aware Timestamps for scheduling_date.
+
+    Returns (None, None) if the driver row or shift times cannot be found.
+    """
+    driver_str = str(driver).strip()
+    tz = scheduling_date.tzinfo
+    date = scheduling_date.date()
+
+    for col in ("driver_id", "ALFRED'S"):
+        if col not in directorio_df.columns:
+            continue
+        mask = directorio_df[col].astype(str).str.strip() == driver_str
+        rows = directorio_df.loc[mask]
+        if rows.empty:
+            continue
+        r = rows.iloc[0]
+        try:
+            start_t = datetime.strptime(str(r.get("start_time", "")), "%H:%M:%S").time()
+            end_t = datetime.strptime(str(r.get("end_time", "")), "%H:%M:%S").time()
+        except ValueError:
+            return None, None
+        shift_start = pd.Timestamp(datetime.combine(date, start_t), tz=tz)
+        shift_end = pd.Timestamp(datetime.combine(date, end_t), tz=tz)
+        return shift_start, shift_end
+
+    return None, None
+
+
+def _plan_exceeds_shift_end(
+    insertion_plan: dict,
+    shift_end_dt: pd.Timestamp,
+) -> bool:
+    """Return True if any labor in the insertion plan ends after shift_end_dt."""
+    frames = [insertion_plan.get("new_moves")]
+    next_moves = insertion_plan.get("next_moves")
+    if next_moves is not None:
+        frames.append(next_moves)
+    frames.extend(insertion_plan.get("downstream_shifts") or [])
+    for df in frames:
+        if df is None or df.empty:
+            continue
+        labor_rows = df[df["labor_context_id"].astype(str).str.endswith("_labor")]
+        if labor_rows.empty:
+            continue
+        max_end = labor_rows["actual_end"].max()
+        if pd.notna(max_end) and max_end > shift_end_dt:
+            return True
+    return False
 
 
 # ===========================================================================
@@ -736,11 +791,15 @@ def evaluate_driver_feasibility(
 
     new_start_time = forced_start_time if forced_start_time else new_labor["schedule_date"]
 
+    shift_start_dt, shift_end_dt = _get_driver_shift(directorio_df, driver, new_start_time)
+    if shift_start_dt is not None and new_start_time < shift_start_dt:
+        return False, "Labor starts before driver's shift start.", None
+
     # ------------------------------------------------------------------
     # Case 1: Driver has no assigned labors
     # ------------------------------------------------------------------
     if moves_driver_df.empty:
-        return _direct_insertion_empty_driver(
+        ok, reason, plan = _direct_insertion_empty_driver(
             new_labor=new_labor,
             driver=driver,
             directorio_df=directorio_df,
@@ -755,13 +814,16 @@ def evaluate_driver_feasibility(
             time_dict=time_dict,
             **kwargs,
         )
+        if ok and shift_end_dt is not None and plan is not None and _plan_exceeds_shift_end(plan, shift_end_dt):
+            return False, "Labor would finish after driver's shift end.", None
+        return ok, reason, plan
 
     # ------------------------------------------------------------------
     # Case 2: Insertion before the driver's first labor
     # ------------------------------------------------------------------
     if _is_creation_before_first_labor(moves_driver_df, directorio_df, driver, home_cache=kwargs.get("home_cache")):
         if new_labor["schedule_date"] <= moves_driver_df.loc[2, "schedule_date"]:
-            return _evaluate_and_execute_insertion_before_first_labor(
+            ok, reason, plan = _evaluate_and_execute_insertion_before_first_labor(
                 new_labor=new_labor,
                 moves_driver_df=moves_driver_df,
                 driver=driver,
@@ -778,6 +840,9 @@ def evaluate_driver_feasibility(
                 time_dict=time_dict,
                 **kwargs,
             )
+            if ok and shift_end_dt is not None and plan is not None and _plan_exceeds_shift_end(plan, shift_end_dt):
+                return False, "Labor would finish after driver's shift end.", None
+            return ok, reason, plan
 
     labor_iter = 2
     n_rows = len(moves_driver_df)
@@ -894,6 +959,18 @@ def evaluate_driver_feasibility(
         if not downstream_ok:
             infeasible_log = "Downstream labors become infeasible after insertion."
             break
+
+        if shift_end_dt is not None:
+            # Check new labor finish and all downstream shifts against driver's shift end
+            ends = [new_finish, next_finish]
+            for ds_df in downstream_shifts:
+                if ds_df is not None and not ds_df.empty:
+                    labor_rows = ds_df[ds_df["labor_context_id"].astype(str).str.endswith("_labor")]
+                    if not labor_rows.empty:
+                        ends.append(labor_rows["actual_end"].max())
+            if any(pd.notna(t) and t > shift_end_dt for t in ends):
+                infeasible_log = "Labor would finish after driver's shift end."
+                break
 
         feasible = True
 
@@ -1024,6 +1101,9 @@ def evaluate_driver_feasibility(
             "next_moves": None,
             "downstream_shifts": [],
         }
+
+    if feasible and shift_end_dt is not None and insertion_plan is not None and _plan_exceeds_shift_end(insertion_plan, shift_end_dt):
+        return False, "Labor would finish after driver's shift end.", None
 
     return feasible, infeasible_log, insertion_plan
 

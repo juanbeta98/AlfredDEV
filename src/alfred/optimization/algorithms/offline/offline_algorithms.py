@@ -339,6 +339,13 @@ def get_candidate_drivers(
         if av.time() < drv['work_start']:
             av = pd.Timestamp(datetime.combine(av.date(), drv['work_start']), tz=av.tz)
 
+        # Skip driver if their shift ends before the labor's schedule_date
+        work_end = drv.get('work_end')
+        if work_end is not None:
+            work_end_dt = pd.Timestamp(datetime.combine(sched.date(), work_end), tz=sched.tz)
+            if sched >= work_end_dt:
+                continue
+
         # For getting candidate drivers always use the haversine formula, otherwise it get's to heavy
         dkm, dist_dict_local = distance(
             drv["position"],
@@ -546,18 +553,24 @@ def init_drivers(
         
         if ignore_schedule:
             hora_inicio = time(0, 0, 0)  # medianoche
+            hora_fin = time(23, 59, 59)
         else:
             try:
                 hora_inicio = datetime.strptime(conductor['start_time'], '%H:%M:%S').time()
             except ValueError:
                 raise ValueError(f"Formato invalido de hora para el conductor {driver_key}")
-        
+            try:
+                hora_fin = datetime.strptime(conductor['end_time'], '%H:%M:%S').time()
+            except (ValueError, KeyError):
+                hora_fin = time(23, 59, 59)
+
         disponibilidad = datetime.combine(first_date, hora_inicio)
-        
+
         conductores[driver_key] = {
             "position": f"POINT ({conductor['longitud']} {conductor['latitud']})",
             "available": pd.Timestamp(disponibilidad).tz_localize(tz),
             "work_start": hora_inicio,
+            "work_end": hora_fin,
         }
     
     return conductores
